@@ -20,5 +20,5 @@ ROLE_ARN
 
 For GCP, the path of the service account JSON file is required.
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=/etc/gcpd/gcplabs-gcpd.json
+GOOGLE_APPLICATION_CREDENTIALS=/etc/longsub/longsubsvcacct.json
 ```
