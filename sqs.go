@@ -279,7 +279,7 @@ func NewSqsLongSub(ctx interface{}, queue string, callback SqsMessageCallback, o
 	}
 
 	if s.logger == nil {
-		s.logger = log.New(os.Stdout, "[sqs]", 0)
+		s.logger = log.New(os.Stdout, "[sqs] ", 0)
 	}
 
 	return s
