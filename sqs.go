@@ -3,6 +3,7 @@ package longsub
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -14,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/dchest/uniuri"
-	"k8s.io/klog/v2"
 )
 
 type SqsMessageCallback func(ctx interface{}, data []byte) error
@@ -26,41 +26,63 @@ type Option interface {
 type withRegion string
 
 func (w withRegion) Apply(o *SqsLengthySubscriber) { o.region = string(w) }
-func WithRegion(v string) Option                   { return withRegion(v) }
+
+// WithRegion sets the region option.
+func WithRegion(v string) Option { return withRegion(v) }
 
 type withAccessKeyId string
 
 func (w withAccessKeyId) Apply(o *SqsLengthySubscriber) { o.key = string(w) }
-func WithAccessKeyId(v string) Option                   { return withAccessKeyId(v) }
+
+// WithAccessKeyId sets the access key id option.
+func WithAccessKeyId(v string) Option { return withAccessKeyId(v) }
 
 type withSecretAccessKey string
 
 func (w withSecretAccessKey) Apply(o *SqsLengthySubscriber) { o.secret = string(w) }
-func WithSecretAccessKey(v string) Option                   { return withSecretAccessKey(v) }
+
+// WithSecretAccessKey sets the secret access key option.
+func WithSecretAccessKey(v string) Option { return withSecretAccessKey(v) }
 
 type withRoleArn string
 
 func (w withRoleArn) Apply(o *SqsLengthySubscriber) { o.roleArn = string(w) }
-func WithRoleArn(v string) Option                   { return withRoleArn(v) }
+
+// WithRoleArn sets the role arn option to assume to.
+func WithRoleArn(v string) Option { return withRoleArn(v) }
 
 type withTimeout int64
 
 func (w withTimeout) Apply(o *SqsLengthySubscriber) { o.timeout = int64(w) }
-func WithTimeout(v int64) Option                    { return withTimeout(v) }
+
+// WithTimeout sets the timeout option.
+func WithTimeout(v int64) Option { return withTimeout(v) }
 
 type withNoExtend bool
 
 func (w withNoExtend) Apply(o *SqsLengthySubscriber) { o.noExtend = bool(w) }
-func WithNoExtend(v bool) Option                     { return withNoExtend(v) }
+
+// WithNoExtend sets the flag to not extend the visibility timeout.
+func WithNoExtend(v bool) Option { return withNoExtend(v) }
 
 type withFatalOnQueueErr bool
 
 func (w withFatalOnQueueErr) Apply(o *SqsLengthySubscriber) { o.fatalOnQueueError = bool(w) }
-func WithFatalOnQueueError(v bool) Option                   { return withFatalOnQueueErr(v) }
+
+// WithFatalOnQueueError sets the function to crash when queue error.
+func WithFatalOnQueueError(v bool) Option { return withFatalOnQueueErr(v) }
+
+type withLogger struct{ l *log.Logger }
+
+func (w withLogger) Apply(o *SqsLengthySubscriber) { o.logger = w.l }
+
+// WithSecretAccessKey sets the logger option.
+func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type SqsLengthySubscriber struct {
-	ctx   interface{} // arbitrary data passed to callback function
-	queue string
+	ctx    interface{} // arbitrary data passed to callback function
+	queue  string
+	logger *log.Logger
 
 	region  string
 	key     string
@@ -76,12 +98,10 @@ type SqsLengthySubscriber struct {
 
 func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) error {
 	localId := uniuri.NewLen(10)
-	klog.Infof("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
+	l.logger.Printf("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
 	if l.timeout < 3 {
-		err := fmt.Errorf("timeout should be >= 3s")
-		klog.Error(err)
-		return err
+		return fmt.Errorf("timeout should be >= 3s")
 	}
 
 	sess, _ := session.NewSession(&aws.Config{
@@ -104,10 +124,10 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 	resultURL, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{QueueName: aws.String(queueName)})
 	if err != nil {
 		if !l.fatalOnQueueError {
-			klog.Errorf("GetQueueUrl failed, err=%v", err)
+			l.logger.Printf("GetQueueUrl failed, err=%v", err)
 			return err
 		} else {
-			klog.Fatalf("GetQueueUrl failed, err=%v", err)
+			l.logger.Fatalf("GetQueueUrl failed, err=%v", err)
 		}
 	}
 
@@ -118,16 +138,16 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 
 	if err != nil {
 		if !l.fatalOnQueueError {
-			klog.Errorf("GetQueueAttributes failed, err=%v", err)
+			l.logger.Printf("GetQueueAttributes failed, err=%v", err)
 			return err
 		} else {
-			klog.Fatalf("GetQueueAttributes failed, err=%v", err)
+			l.logger.Fatalf("GetQueueAttributes failed, err=%v", err)
 		}
 	}
 
 	vis, err := strconv.Atoi(*attrOut.Attributes[vistm])
 	if err != nil {
-		klog.Errorf("visibility conv failed, err=%v", err)
+		l.logger.Printf("visibility conv failed, err=%v", err)
 		return err
 	}
 
@@ -142,12 +162,12 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 		donech <- nil
 	}()
 
-	klog.Infof("start listen, queue=%v, visibility=%vs", queueName, vis)
+	l.logger.Printf("start listen, queue=%v, visibility=%vs", queueName, vis)
 
 	for {
 		// Should we terminate via quit?
 		if atomic.LoadInt32(&term) > 0 {
-			klog.Infof("requested to terminate, id=%v", localId)
+			l.logger.Printf("requested to terminate, id=%v", localId)
 			break
 		}
 
@@ -163,7 +183,7 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 		})
 
 		if err != nil {
-			klog.Errorf("get queue url failed, err=%v", err)
+			l.logger.Printf("get queue url failed, err=%v", err)
 			continue
 		}
 
@@ -181,7 +201,7 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 		} else {
 			go func(queueUrl, receiptHandle string) {
 				defer func() {
-					klog.Infof("visibility timeout extender done for [%v]", receiptHandle)
+					l.logger.Printf("visibility timeout extender done for [%v]", receiptHandle)
 					extendch <- nil
 				}()
 
@@ -199,12 +219,12 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 							})
 
 							if err != nil {
-								klog.Errorf("[q=%v] extend visibility timeout for [%v] failed, err=%v", l.queue, receiptHandle, err)
+								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed, err=%v", l.queue, receiptHandle, err)
 								change = false
 								continue
 							}
 
-							klog.Infof("[q=%v] visibility timeout for [%v] updated to %v", l.queue, receiptHandle, vis)
+							l.logger.Printf("[q=%v] visibility timeout for [%v] updated to %v", l.queue, receiptHandle, vis)
 						}
 					}
 				}
@@ -227,7 +247,7 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 			})
 
 			if err != nil {
-				klog.Errorf("delete message failed, err=%v", err)
+				l.logger.Printf("delete message failed, err=%v", err)
 			}
 		}
 
@@ -255,6 +275,10 @@ func NewSqsLengthySubscriber(ctx interface{}, queue string, callback SqsMessageC
 
 	for _, opt := range o {
 		opt.Apply(s)
+	}
+
+	if s.logger == nil {
+		s.logger = log.New(os.Stdout, "[sqs]", 0)
 	}
 
 	return s
