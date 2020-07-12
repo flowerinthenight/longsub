@@ -20,68 +20,69 @@ import (
 type SqsMessageCallback func(ctx interface{}, data []byte) error
 
 type Option interface {
-	Apply(*SqsLengthySubscriber)
+	Apply(*SqsLongSub)
 }
 
 type withRegion string
 
-func (w withRegion) Apply(o *SqsLengthySubscriber) { o.region = string(w) }
+func (w withRegion) Apply(o *SqsLongSub) { o.region = string(w) }
 
 // WithRegion sets the region option.
 func WithRegion(v string) Option { return withRegion(v) }
 
 type withAccessKeyId string
 
-func (w withAccessKeyId) Apply(o *SqsLengthySubscriber) { o.key = string(w) }
+func (w withAccessKeyId) Apply(o *SqsLongSub) { o.key = string(w) }
 
 // WithAccessKeyId sets the access key id option.
 func WithAccessKeyId(v string) Option { return withAccessKeyId(v) }
 
 type withSecretAccessKey string
 
-func (w withSecretAccessKey) Apply(o *SqsLengthySubscriber) { o.secret = string(w) }
+func (w withSecretAccessKey) Apply(o *SqsLongSub) { o.secret = string(w) }
 
 // WithSecretAccessKey sets the secret access key option.
 func WithSecretAccessKey(v string) Option { return withSecretAccessKey(v) }
 
 type withRoleArn string
 
-func (w withRoleArn) Apply(o *SqsLengthySubscriber) { o.roleArn = string(w) }
+func (w withRoleArn) Apply(o *SqsLongSub) { o.roleArn = string(w) }
 
 // WithRoleArn sets the role arn option to assume to.
 func WithRoleArn(v string) Option { return withRoleArn(v) }
 
 type withTimeout int64
 
-func (w withTimeout) Apply(o *SqsLengthySubscriber) { o.timeout = int64(w) }
+func (w withTimeout) Apply(o *SqsLongSub) { o.timeout = int64(w) }
 
 // WithTimeout sets the timeout option.
 func WithTimeout(v int64) Option { return withTimeout(v) }
 
 type withNoExtend bool
 
-func (w withNoExtend) Apply(o *SqsLengthySubscriber) { o.noExtend = bool(w) }
+func (w withNoExtend) Apply(o *SqsLongSub) { o.noExtend = bool(w) }
 
 // WithNoExtend sets the flag to not extend the visibility timeout.
 func WithNoExtend(v bool) Option { return withNoExtend(v) }
 
 type withFatalOnQueueErr bool
 
-func (w withFatalOnQueueErr) Apply(o *SqsLengthySubscriber) { o.fatalOnQueueError = bool(w) }
+func (w withFatalOnQueueErr) Apply(o *SqsLongSub) { o.fatalOnQueueError = bool(w) }
 
 // WithFatalOnQueueError sets the function to crash when queue error.
 func WithFatalOnQueueError(v bool) Option { return withFatalOnQueueErr(v) }
 
 type withLogger struct{ l *log.Logger }
 
-func (w withLogger) Apply(o *SqsLengthySubscriber) { o.logger = w.l }
+func (w withLogger) Apply(o *SqsLongSub) { o.logger = w.l }
 
 // WithSecretAccessKey sets the logger option.
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
-type SqsLengthySubscriber struct {
-	ctx    interface{} // arbitrary data passed to callback function
-	queue  string
+type SqsLongSub struct {
+	ctx   interface{} // arbitrary data passed to callback function
+	queue string
+
 	logger *log.Logger
 
 	region  string
@@ -96,7 +97,7 @@ type SqsLengthySubscriber struct {
 	callback SqsMessageCallback
 }
 
-func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) error {
+func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 	localId := uniuri.NewLen(10)
 	l.logger.Printf("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
@@ -261,8 +262,8 @@ func (l *SqsLengthySubscriber) Start(quit context.Context, done chan error) erro
 	return nil
 }
 
-func NewSqsLengthySubscriber(ctx interface{}, queue string, callback SqsMessageCallback, o ...Option) *SqsLengthySubscriber {
-	s := &SqsLengthySubscriber{
+func NewSqsLongSub(ctx interface{}, queue string, callback SqsMessageCallback, o ...Option) *SqsLongSub {
+	s := &SqsLongSub{
 		ctx:      ctx,
 		queue:    queue,
 		region:   os.Getenv("AWS_REGION"),

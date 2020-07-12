@@ -3,12 +3,13 @@ package longsub
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"sync/atomic"
 	"time"
 
 	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
 	"github.com/dchest/uniuri"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	pubsubpb "google.golang.org/genproto/googleapis/pubsub/v1"
 )
@@ -21,13 +22,10 @@ type LengthySubscriberOption interface {
 
 type withDeadline int
 
-func (w withDeadline) Apply(o *LengthySubscriber) {
-	o.deadline = int(w)
-}
+func (w withDeadline) Apply(o *LengthySubscriber) { o.deadline = int(w) }
 
-func WithDeadline(v int) LengthySubscriberOption {
-	return withDeadline(v)
-}
+// WithDeadline sets the deadline option.
+func WithDeadline(v int) LengthySubscriberOption { return withDeadline(v) }
 
 type LengthySubscriber struct {
 	ctx          interface{} // any arbitrary data passed to callback
@@ -37,18 +35,20 @@ type LengthySubscriber struct {
 	maxMessages  int
 	callback     Callback
 
+	logger *log.Logger
+
 	// Count for our exponential backoff for pull errors.
 	backoffMax int
 }
 
 func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	localId := uniuri.NewLen(10)
-	glog.Infof("pubsub lengthy subscriber started, id=%v, time=%v", localId, time.Now())
+	l.logger.Printf("pubsub lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
 	var term int32
 	go func() {
 		<-quit.Done()
-		glog.Infof("requested to terminate, id=%v", localId)
+		l.logger.Printf("requested to terminate, id=%v", localId)
 		atomic.StoreInt32(&term, 1)
 	}()
 
@@ -67,27 +67,27 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 		MaxMessages:  int32(l.maxMessages),
 	}
 
-	glog.Infof("start subscription listen on %v", subname)
+	l.logger.Printf("start subscription listen on %v", subname)
 
 	backoff := time.Second * 1
 	backoffn, backoffmax := 0, l.backoffMax
 
 	for {
 		if atomic.LoadInt32(&term) > 0 {
-			glog.Infof("id=%v terminated", localId)
+			l.logger.Printf("id=%v terminated", localId)
 			done <- nil
 			return nil
 		}
 
 		res, err := client.Pull(ctx, &req)
 		if err != nil {
-			glog.Infof("client pull failed, backoff=%v, err=%v", backoff, err)
+			l.logger.Printf("client pull failed, backoff=%v, err=%v", backoff, err)
 
 			time.Sleep(backoff)
 			backoff = backoff * 2
 			backoffn += 1
 			if backoffn > l.backoffMax {
-				glog.Infof("backoff exceeds %v", backoffmax)
+				l.logger.Printf("backoff exceeds %v", backoffmax)
 				return errors.Errorf("backoff exceeds %v", backoffmax)
 			}
 
@@ -111,7 +111,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 
 		// Continuously notify the server that processing is still happening on this batch.
 		go func() {
-			defer glog.Infof("ack extender done for %v", ids)
+			defer l.logger.Printf("ack extender done for %v", ids)
 
 			for {
 				select {
@@ -120,7 +120,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 				case <-finishc:
 					return
 				case <-time.After(delay):
-					glog.Infof("modify ack deadline for %vs, ids=%v", ackDeadline.Seconds(), ids)
+					l.logger.Printf("modify ack deadline for %vs, ids=%v", ackDeadline.Seconds(), ids)
 
 					err := client.ModifyAckDeadline(ctx, &pubsubpb.ModifyAckDeadlineRequest{
 						Subscription:       subname,
@@ -129,7 +129,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 					})
 
 					if err != nil {
-						glog.Errorf("failed in ack deadline extend, err=%v", err)
+						l.logger.Printf("failed in ack deadline extend, err=%v", err)
 					}
 
 					delay = ackDeadline - 10*time.Second // 10 seconds grace period
@@ -159,10 +159,10 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 		for _, msg := range res.ReceivedMessages {
 			go func(rm *pubsubpb.ReceivedMessage) {
 				defer func(begin time.Time) {
-					glog.Infof("duration=%v, ids=%v", time.Since(begin), ids)
+					l.logger.Printf("duration=%v, ids=%v", time.Since(begin), ids)
 				}(time.Now())
 
-				glog.Infof("payload=%v, ids=%v", string(rm.Message.Data), ids)
+				l.logger.Printf("payload=%v, ids=%v", string(rm.Message.Data), ids)
 
 				// Process message.
 				err := l.callback(l.ctx, rm.Message.Data)
@@ -180,7 +180,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 					})
 
 					if err != nil {
-						glog.Errorf("ack failed, err=%v", err)
+						l.logger.Printf("ack failed, err=%v", err)
 					}
 				}
 
@@ -211,6 +211,10 @@ func NewLengthySubscriber(ctx interface{}, project, subscription string, callbac
 
 	for _, opt := range o {
 		opt.Apply(s)
+	}
+
+	if s.logger == nil {
+		s.logger = log.New(os.Stdout, "[pubsub]", 0)
 	}
 
 	return s
