@@ -10,7 +10,6 @@ import (
 
 	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
 	"github.com/dchest/uniuri"
-	"github.com/pkg/errors"
 	pubsubpb "google.golang.org/genproto/googleapis/pubsub/v1"
 )
 
@@ -55,7 +54,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	ctx := context.TODO()
 	client, err := pubsubv1.NewSubscriberClient(ctx)
 	if err != nil {
-		return errors.Wrap(err, "new subscriber failed")
+		return err
 	}
 
 	defer client.Close()
@@ -88,7 +87,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 			backoffn += 1
 			if backoffn > l.backoffMax {
 				l.logger.Printf("backoff exceeds %v", backoffmax)
-				return errors.Errorf("backoff exceeds %v", backoffmax)
+				return fmt.Errorf("backoff exceeds %v", backoffmax)
 			}
 
 			continue
