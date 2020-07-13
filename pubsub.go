@@ -213,7 +213,7 @@ func NewLengthySubscriber(ctx interface{}, project, subscription string, callbac
 	}
 
 	if s.logger == nil {
-		s.logger = log.New(os.Stdout, "[pubsub]", 0)
+		s.logger = log.New(os.Stdout, "[pubsub] ", 0)
 	}
 
 	return s
