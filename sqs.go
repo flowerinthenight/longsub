@@ -127,9 +127,9 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 		if !l.fatalOnQueueError {
 			l.logger.Printf("GetQueueUrl failed, err=%v", err)
 			return err
-		} else {
-			l.logger.Fatalf("GetQueueUrl failed, err=%v", err)
 		}
+
+		l.logger.Fatalf("GetQueueUrl failed, err=%v", err)
 	}
 
 	attrOut, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
@@ -141,9 +141,9 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 		if !l.fatalOnQueueError {
 			l.logger.Printf("GetQueueAttributes failed, err=%v", err)
 			return err
-		} else {
-			l.logger.Fatalf("GetQueueAttributes failed, err=%v", err)
 		}
+
+		l.logger.Fatalf("GetQueueAttributes failed, err=%v", err)
 	}
 
 	vis, err := strconv.Atoi(*attrOut.Attributes[vistm])
