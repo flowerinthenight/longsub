@@ -6,10 +6,12 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -220,6 +222,17 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 							})
 
 							if err != nil {
+								_, ok := err.(awserr.Error)
+								if ok {
+									// TODO: Surely, there has to be a better way.
+									// Actual error:
+									//   err=InvalidParameterValue: Value 30 for parameter VisibilityTimeout is invalid.
+									//   Reason: Total VisibilityTimeout for the message is beyond the limit [43200 seconds]
+									if strings.Contains(strings.ToLower(err.Error()), "beyond the limit") {
+										return
+									}
+								}
+
 								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed, err=%v", l.queue, receiptHandle, err)
 								change = false
 								continue
