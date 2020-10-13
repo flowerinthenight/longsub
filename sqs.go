@@ -271,10 +271,9 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 			}
 		}
 
-		// Terminate our extender goroutine and wait.
-		cancel()
 		ticker.Stop()
-		<-extendch
+		cancel()   // terminate our extender
+		<-extendch // and wait
 	}
 
 	done <- <-donech

@@ -44,6 +44,10 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	localId := uniuri.NewLen(10)
 	l.logger.Printf("pubsub lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
+	defer func(begin time.Time) {
+		l.logger.Printf("duration[Start]=%v, id=%v", time.Since(begin), localId)
+	}(time.Now())
+
 	var term int32
 	go func() {
 		<-quit.Done()
@@ -60,16 +64,11 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	defer client.Close()
 
 	subname := fmt.Sprintf("projects/%v/subscriptions/%v", l.project, l.subscription)
-
-	req := pubsubpb.PullRequest{
-		Subscription: subname,
-		MaxMessages:  int32(l.maxMessages),
-	}
-
-	l.logger.Printf("start subscription listen on %v", subname)
-
+	req := pubsubpb.PullRequest{Subscription: subname, MaxMessages: int32(l.maxMessages)}
 	backoff := time.Second * 1
 	backoffn, backoffmax := 0, l.backoffMax
+
+	l.logger.Printf("start subscription listen on %v", subname)
 
 	for {
 		if atomic.LoadInt32(&term) > 0 {
