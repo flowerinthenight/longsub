@@ -82,9 +82,8 @@ func (w withLogger) Apply(o *SqsLongSub) { o.logger = w.l }
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type SqsLongSub struct {
-	ctx   interface{} // arbitrary data passed to callback function
-	queue string
-
+	ctx    interface{} // arbitrary data passed to callback function
+	queue  string
 	logger *log.Logger
 
 	region  string
@@ -94,9 +93,8 @@ type SqsLongSub struct {
 
 	noExtend          bool // if true, no attempt to extend visibility per message
 	fatalOnQueueError bool // if true, we crash if there are queue-related errors
-
-	timeout  int64
-	callback SqsMessageCallback
+	timeout           int64
+	callback          SqsMessageCallback
 }
 
 func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
@@ -155,14 +153,15 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 	}
 
 	donech := make(chan error, 1)
+	donefor := make(chan error, 1)
 	var term int32
 
 	// Monitor if we are requested to quit. Note that ReceiveMessage will block based on timeout
 	// value so we could still be waiting for some time before we can actually quit gracefully.
 	go func() {
-		<-quit.Done()
-		atomic.StoreInt32(&term, 1)
-		donech <- nil
+		<-quit.Done()               // main terminate from caller
+		atomic.StoreInt32(&term, 1) // signal our main loop to terminate
+		donech <- <-donefor         // make sure we wait
 	}()
 
 	l.logger.Printf("start listen, queue=%v, visibility=%vs", queueName, vis)
@@ -171,6 +170,7 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 		// Should we terminate via quit?
 		if atomic.LoadInt32(&term) > 0 {
 			l.logger.Printf("requested to terminate, id=%v", localId)
+			donefor <- nil
 			break
 		}
 
@@ -208,6 +208,7 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 					extendch <- nil
 				}()
 
+				var errcnt int
 				change := true
 				for {
 					select {
@@ -226,19 +227,24 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 								if ok {
 									// TODO: Surely, there has to be a better way.
 									// Actual error:
-									//   err=InvalidParameterValue: Value 30 for parameter VisibilityTimeout is invalid.
-									//   Reason: Total VisibilityTimeout for the message is beyond the limit [43200 seconds]
+									//  err=InvalidParameterValue: Value 30 for parameter VisibilityTimeout is invalid.
+									//  Reason: Total VisibilityTimeout for the message is beyond the limit [43200 seconds].
 									if strings.Contains(strings.ToLower(err.Error()), "beyond the limit") {
 										return
 									}
 								}
 
+								errcnt++
+								if errcnt >= 3 {
+									change = false // do nothing on tick onwards
+								}
+
 								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed, err=%v", l.queue, receiptHandle, err)
-								change = false
 								continue
 							}
 
 							l.logger.Printf("[q=%v] visibility timeout for [%v] updated to %v", l.queue, receiptHandle, vis)
+							errcnt = 0 // reset
 						}
 					}
 				}
