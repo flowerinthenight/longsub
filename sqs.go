@@ -101,6 +101,10 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 	localId := uniuri.NewLen(10)
 	l.logger.Printf("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
+	defer func(begin time.Time) {
+		l.logger.Printf("duration[Start]=%v, id=%v", time.Since(begin), localId)
+	}(time.Now())
+
 	if l.timeout < 3 {
 		return fmt.Errorf("timeout should be >= 3s")
 	}
