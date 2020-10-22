@@ -1,4 +1,4 @@
-![Go](https://github.com/flowerinthenight/longsub/workflows/Go/badge.svg)
+![Main](https://github.com/flowerinthenight/longsub/workflows/Main/badge.svg)
 
 ## Overview
 
