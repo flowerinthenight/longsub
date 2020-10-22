@@ -1,4 +1,4 @@
-package longsub
+package awssqs
 
 import (
 	"fmt"
@@ -14,8 +14,8 @@ import (
 	"github.com/dchest/uniuri"
 )
 
-func NewAWSUtil(region, key, secret, rolearn string) *AWSUtil {
-	return &AWSUtil{
+func NewHelper(region, key, secret, rolearn string) *Helper {
+	return &Helper{
 		region:  region,
 		key:     key,
 		secret:  secret,
@@ -23,14 +23,14 @@ func NewAWSUtil(region, key, secret, rolearn string) *AWSUtil {
 	}
 }
 
-type AWSUtil struct {
+type Helper struct {
 	region  string
 	key     string
 	secret  string
 	rolearn string
 }
 
-func (u *AWSUtil) session() *session.Session {
+func (u *Helper) session() *session.Session {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(u.region),
 		Credentials: credentials.NewStaticCredentials(u.key, u.secret, ""),
@@ -39,7 +39,7 @@ func (u *AWSUtil) session() *session.Session {
 	return sess
 }
 
-func (u *AWSUtil) sqsSvc() *sqs.SQS {
+func (u *Helper) sqsSvc() *sqs.SQS {
 	sess := u.session()
 	var svc *sqs.SQS
 	if u.rolearn != "" {
@@ -52,7 +52,7 @@ func (u *AWSUtil) sqsSvc() *sqs.SQS {
 	return svc
 }
 
-func (u *AWSUtil) snsSvc() *sns.SNS {
+func (u *Helper) snsSvc() *sns.SNS {
 	sess := u.session()
 	var svc *sns.SNS
 	if u.rolearn != "" {
@@ -65,7 +65,7 @@ func (u *AWSUtil) snsSvc() *sns.SNS {
 	return svc
 }
 
-func (u *AWSUtil) GetAcctId() (*string, error) {
+func (u *Helper) GetAcctId() (*string, error) {
 	sess := u.session()
 	var svc *sts.STS
 	if u.rolearn != "" {
@@ -85,7 +85,7 @@ func (u *AWSUtil) GetAcctId() (*string, error) {
 
 // GetSqsAllowAllPolicy returns a policy that can be used when creating an SQS queue that allow
 // all SQS actions for everybody.
-func (u *AWSUtil) GetSqsAllowAllPolicy(queue string) string {
+func (u *Helper) GetSqsAllowAllPolicy(queue string) string {
 	acct, err := u.GetAcctId()
 	if err != nil {
 		return ""
@@ -111,7 +111,7 @@ func (u *AWSUtil) GetSqsAllowAllPolicy(queue string) string {
 }
 
 // GetSqs creates an SQS queue and returning the queue url and attributes.
-func (u *AWSUtil) GetSqs(name string) (*string, map[string]*string, error) {
+func (u *Helper) GetSqs(name string) (*string, map[string]*string, error) {
 	svc := u.sqsSvc()
 	policy := u.GetSqsAllowAllPolicy(name)
 	create, err := svc.CreateQueue(&sqs.CreateQueueInput{
@@ -137,7 +137,7 @@ func (u *AWSUtil) GetSqs(name string) (*string, map[string]*string, error) {
 
 // GetTopic returns the ARN of a newly created topic or an existing one. CreateTopic API
 // returns the ARN of an existing topic.
-func (u *AWSUtil) GetTopic(name string) (*string, error) {
+func (u *Helper) GetTopic(name string) (*string, error) {
 	svc := u.snsSvc()
 	res, err := svc.CreateTopic(&sns.CreateTopicInput{Name: aws.String(name)})
 	if err != nil {
@@ -155,7 +155,7 @@ type SubscribeToTopicInput struct {
 
 // SubscribeToTopic creates the queue, or use an existing queue, and subscribe to the
 // provided SNS topic.
-func (u *AWSUtil) SubscribeToTopic(in *SubscribeToTopicInput) (*sns.SubscribeOutput, error) {
+func (u *Helper) SubscribeToTopic(in *SubscribeToTopicInput) (*sns.SubscribeOutput, error) {
 	if in == nil {
 		return nil, fmt.Errorf("input cannot be nil")
 	}
@@ -175,7 +175,7 @@ func (u *AWSUtil) SubscribeToTopic(in *SubscribeToTopicInput) (*sns.SubscribeOut
 }
 
 // SetupSnsSqsSubscription creates a subscription of sub to topic. It returns topic's ARN along with error.
-func (u *AWSUtil) SetupSnsSqsSubscription(topic, sub string) (*string, error) {
+func (u *Helper) SetupSnsSqsSubscription(topic, sub string) (*string, error) {
 	topicArn, err := u.GetTopic(topic)
 	if err != nil {
 		return nil, err

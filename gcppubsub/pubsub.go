@@ -1,4 +1,4 @@
-package longsub
+package gcppubsub
 
 import (
 	"context"
@@ -10,12 +10,13 @@ import (
 
 	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
 	"github.com/dchest/uniuri"
+	"github.com/flowerinthenight/longsub"
 	pubsubpb "google.golang.org/genproto/googleapis/pubsub/v1"
 )
 
 type Callback func(ctx interface{}, data []byte) error
 
-type LengthySubscriberOption interface {
+type Option interface {
 	Apply(*LengthySubscriber)
 }
 
@@ -24,7 +25,14 @@ type withDeadline int
 func (w withDeadline) Apply(o *LengthySubscriber) { o.deadline = int(w) }
 
 // WithDeadline sets the deadline option.
-func WithDeadline(v int) LengthySubscriberOption { return withDeadline(v) }
+func WithDeadline(v int) Option { return withDeadline(v) }
+
+type withLogger struct{ l *log.Logger }
+
+func (w withLogger) Apply(o *LengthySubscriber) { o.logger = w.l }
+
+// WithSecretAccessKey sets the logger option.
+func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
 	ctx          interface{} // any arbitrary data passed to callback
@@ -165,7 +173,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 				// Process message.
 				err := l.callback(l.ctx, rm.Message.Data)
 				ack := true
-				if rq, ok := err.(Requeuer); ok {
+				if rq, ok := err.(longsub.Requeuer); ok {
 					if rq.ShouldRequeue() {
 						ack = false
 					}
@@ -196,7 +204,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	return nil
 }
 
-func NewLengthySubscriber(ctx interface{}, project, subscription string, callback Callback, o ...LengthySubscriberOption) *LengthySubscriber {
+func NewLengthySubscriber(ctx interface{}, project, subscription string, callback Callback, o ...Option) *LengthySubscriber {
 	s := &LengthySubscriber{
 		ctx:          ctx,
 		project:      project,

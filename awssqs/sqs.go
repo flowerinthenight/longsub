@@ -1,4 +1,4 @@
-package longsub
+package awssqs
 
 import (
 	"context"
@@ -17,71 +17,72 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/dchest/uniuri"
+	"github.com/flowerinthenight/longsub"
 )
 
 type SqsMessageCallback func(ctx interface{}, data []byte) error
 
 type Option interface {
-	Apply(*SqsLongSub)
+	Apply(*LengthySubscriber)
 }
 
 type withRegion string
 
-func (w withRegion) Apply(o *SqsLongSub) { o.region = string(w) }
+func (w withRegion) Apply(o *LengthySubscriber) { o.region = string(w) }
 
 // WithRegion sets the region option.
 func WithRegion(v string) Option { return withRegion(v) }
 
 type withAccessKeyId string
 
-func (w withAccessKeyId) Apply(o *SqsLongSub) { o.key = string(w) }
+func (w withAccessKeyId) Apply(o *LengthySubscriber) { o.key = string(w) }
 
 // WithAccessKeyId sets the access key id option.
 func WithAccessKeyId(v string) Option { return withAccessKeyId(v) }
 
 type withSecretAccessKey string
 
-func (w withSecretAccessKey) Apply(o *SqsLongSub) { o.secret = string(w) }
+func (w withSecretAccessKey) Apply(o *LengthySubscriber) { o.secret = string(w) }
 
 // WithSecretAccessKey sets the secret access key option.
 func WithSecretAccessKey(v string) Option { return withSecretAccessKey(v) }
 
 type withRoleArn string
 
-func (w withRoleArn) Apply(o *SqsLongSub) { o.roleArn = string(w) }
+func (w withRoleArn) Apply(o *LengthySubscriber) { o.roleArn = string(w) }
 
 // WithRoleArn sets the role arn option to assume to.
 func WithRoleArn(v string) Option { return withRoleArn(v) }
 
 type withTimeout int64
 
-func (w withTimeout) Apply(o *SqsLongSub) { o.timeout = int64(w) }
+func (w withTimeout) Apply(o *LengthySubscriber) { o.timeout = int64(w) }
 
 // WithTimeout sets the timeout option.
 func WithTimeout(v int64) Option { return withTimeout(v) }
 
 type withNoExtend bool
 
-func (w withNoExtend) Apply(o *SqsLongSub) { o.noExtend = bool(w) }
+func (w withNoExtend) Apply(o *LengthySubscriber) { o.noExtend = bool(w) }
 
 // WithNoExtend sets the flag to not extend the visibility timeout.
 func WithNoExtend(v bool) Option { return withNoExtend(v) }
 
 type withFatalOnQueueErr bool
 
-func (w withFatalOnQueueErr) Apply(o *SqsLongSub) { o.fatalOnQueueError = bool(w) }
+func (w withFatalOnQueueErr) Apply(o *LengthySubscriber) { o.fatalOnQueueError = bool(w) }
 
 // WithFatalOnQueueError sets the function to crash when queue error.
 func WithFatalOnQueueError(v bool) Option { return withFatalOnQueueErr(v) }
 
 type withLogger struct{ l *log.Logger }
 
-func (w withLogger) Apply(o *SqsLongSub) { o.logger = w.l }
+func (w withLogger) Apply(o *LengthySubscriber) { o.logger = w.l }
 
 // WithSecretAccessKey sets the logger option.
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
-type SqsLongSub struct {
+type LengthySubscriber struct {
 	ctx    interface{} // arbitrary data passed to callback function
 	queue  string
 	logger *log.Logger
@@ -97,7 +98,7 @@ type SqsLongSub struct {
 	callback          SqsMessageCallback
 }
 
-func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
+func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	localId := uniuri.NewLen(10)
 	l.logger.Printf("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
@@ -258,7 +259,7 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 		// Call message processing callback.
 		err = l.callback(l.ctx, []byte(*result.Messages[0].Body))
 		ack := true
-		if rq, ok := err.(Requeuer); ok {
+		if rq, ok := err.(longsub.Requeuer); ok {
 			if rq.ShouldRequeue() {
 				ack = false
 			}
@@ -284,8 +285,8 @@ func (l *SqsLongSub) Start(quit context.Context, done chan error) error {
 	return nil
 }
 
-func NewSqsLongSub(ctx interface{}, queue string, callback SqsMessageCallback, o ...Option) *SqsLongSub {
-	s := &SqsLongSub{
+func NewLengthySubscriber(ctx interface{}, queue string, callback SqsMessageCallback, o ...Option) *LengthySubscriber {
+	s := &LengthySubscriber{
 		ctx:      ctx,
 		queue:    queue,
 		region:   os.Getenv("AWS_REGION"),
