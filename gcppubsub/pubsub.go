@@ -87,8 +87,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 
 		res, err := client.Pull(ctx, &req)
 		if err != nil {
-			l.logger.Printf("client pull failed, backoff=%v, err=%v", backoff, err)
-
+			l.logger.Printf("client pull failed, backoff=%v: %v", backoff, err)
 			time.Sleep(backoff)
 			backoff = backoff * 2
 			backoffn += 1
@@ -135,7 +134,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 					})
 
 					if err != nil {
-						l.logger.Printf("failed in ack deadline extend, err=%v", err)
+						l.logger.Printf("ModifyAckDeadline failed: %v", err)
 					}
 
 					delay = ackDeadline - 10*time.Second // 10 seconds grace period
@@ -170,12 +169,15 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 
 				l.logger.Printf("payload=%v, ids=%v", string(rm.Message.Data), ids)
 
-				// Process message.
-				err := l.callback(l.ctx, rm.Message.Data)
 				ack := true
-				if rq, ok := err.(longsub.Requeuer); ok {
-					if rq.ShouldRequeue() {
-						ack = false
+				err := l.callback(l.ctx, rm.Message.Data) // process message via callback
+				if err != nil {
+					if rq, ok := err.(longsub.Requeuer); ok {
+						if rq.ShouldRequeue() {
+							ack = false
+						}
+					} else {
+						l.logger.Printf("callback failed: %v", err)
 					}
 				}
 
@@ -186,7 +188,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 					})
 
 					if err != nil {
-						l.logger.Printf("ack failed, err=%v", err)
+						l.logger.Printf("Acknowledge failed: %v", err)
 					}
 				}
 

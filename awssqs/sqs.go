@@ -130,11 +130,11 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	resultURL, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{QueueName: aws.String(queueName)})
 	if err != nil {
 		if !l.fatalOnQueueError {
-			l.logger.Printf("GetQueueUrl failed, err=%v", err)
+			l.logger.Printf("GetQueueUrl failed: %v", err)
 			return err
 		}
 
-		l.logger.Fatalf("GetQueueUrl failed, err=%v", err)
+		l.logger.Fatalf("GetQueueUrl failed: %v", err)
 	}
 
 	attrOut, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
@@ -144,16 +144,16 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 
 	if err != nil {
 		if !l.fatalOnQueueError {
-			l.logger.Printf("GetQueueAttributes failed, err=%v", err)
+			l.logger.Printf("GetQueueAttributes failed: %v", err)
 			return err
 		}
 
-		l.logger.Fatalf("GetQueueAttributes failed, err=%v", err)
+		l.logger.Fatalf("GetQueueAttributes failed: %v", err)
 	}
 
 	vis, err := strconv.Atoi(*attrOut.Attributes[vistm])
 	if err != nil {
-		l.logger.Printf("visibility conv failed, err=%v", err)
+		l.logger.Printf("visibility conv failed: %v", err)
 		return err
 	}
 
@@ -191,7 +191,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 		})
 
 		if err != nil {
-			l.logger.Printf("get queue url failed, err=%v", err)
+			l.logger.Printf("get queue url failed: %v", err)
 			continue
 		}
 
@@ -244,7 +244,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 									change = false // do nothing on tick onwards
 								}
 
-								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed, err=%v", l.queue, receiptHandle, err)
+								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed: %v", l.queue, receiptHandle, err)
 								continue
 							}
 
@@ -256,12 +256,15 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 			}(*resultURL.QueueUrl, *result.Messages[0].ReceiptHandle)
 		}
 
-		// Call message processing callback.
-		err = l.callback(l.ctx, []byte(*result.Messages[0].Body))
 		ack := true
-		if rq, ok := err.(longsub.Requeuer); ok {
-			if rq.ShouldRequeue() {
-				ack = false
+		err = l.callback(l.ctx, []byte(*result.Messages[0].Body)) // call message processing callback
+		if err != nil {
+			if rq, ok := err.(longsub.Requeuer); ok {
+				if rq.ShouldRequeue() {
+					ack = false
+				}
+			} else {
+				l.logger.Printf("callback failed: %v", err)
 			}
 		}
 
@@ -272,7 +275,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 			})
 
 			if err != nil {
-				l.logger.Printf("delete message failed, err=%v", err)
+				l.logger.Printf("delete message failed: %v", err)
 			}
 		}
 
