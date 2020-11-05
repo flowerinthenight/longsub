@@ -1,4 +1,4 @@
-![Main](https://github.com/flowerinthenight/longsub/workflows/Main/badge.svg)
+![main](https://github.com/flowerinthenight/longsub/workflows/main/badge.svg)
 
 ## Overview
 
