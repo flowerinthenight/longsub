@@ -4,8 +4,8 @@ go 1.14
 
 require (
 	cloud.google.com/go/pubsub v1.8.2
+	github.com/NYTimes/gizmo v1.3.6
 	github.com/aws/aws-sdk-go v1.35.12
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5
 	github.com/kr/text v0.2.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
