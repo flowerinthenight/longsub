@@ -103,7 +103,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 	l.logger.Printf("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
 
 	defer func(begin time.Time) {
-		l.logger.Printf("duration[Start]=%v, id=%v", time.Since(begin), localId)
+		l.logger.Printf("duration=%v, id=%v", time.Since(begin), localId)
 	}(time.Now())
 
 	if l.timeout < 3 {
