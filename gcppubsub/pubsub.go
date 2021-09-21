@@ -41,14 +41,14 @@ type withNoExtend bool
 
 func (w withNoExtend) Apply(o *LengthySubscriber) { o.noExtend = bool(w) }
 
-// WithNoExtend sets the flag to not extend the visibility timeout.
+// WithNoExtend sets the flag to not extend the ack deadline.
 func WithNoExtend(v bool) Option { return withNoExtend(v) }
 
 type withLogger struct{ l *log.Logger }
 
 func (w withLogger) Apply(o *LengthySubscriber) { o.logger = w.l }
 
-// WithSecretAccessKey sets the logger option.
+// WithLogger sets the logger option.
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
