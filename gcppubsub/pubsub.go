@@ -22,6 +22,14 @@ type Option interface {
 	Apply(*LengthySubscriber)
 }
 
+type withClient struct{ c *pubsubv1.SubscriberClient }
+
+func (w withClient) Apply(o *LengthySubscriber) { o.client = w.c }
+
+// WithClient sets the PubSub client. If not provided, an internal client is
+// used using the environment's credentials.
+func WithClient(v *pubsubv1.SubscriberClient) Option { return withClient{v} }
+
 type withDeadline int
 
 func (w withDeadline) Apply(o *LengthySubscriber) { o.deadline = int(w) }
@@ -45,6 +53,7 @@ func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
 	ctx          interface{} // any arbitrary data passed to callback
+	client       *pubsubv1.SubscriberClient
 	project      string
 	subscription string
 	deadline     int // seconds
@@ -60,6 +69,7 @@ type LengthySubscriber struct {
 // Start starts the main goroutine handler. Terminates via 'ctx'. If 'done' is provided, will
 // send a message there to signal caller that it's done with processing.
 func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error {
+	var err error
 	localId := uniuri.NewLen(10)
 	l.logger.Printf("lengthy subscriber started, id=%v, time=%v",
 		localId, time.Now().Format(time.RFC3339))
@@ -78,12 +88,18 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 	}()
 
 	subctx := context.WithValue(ctx, struct{}{}, nil)
-	client, err := pubsubv1.NewSubscriberClient(subctx)
-	if err != nil {
-		return err
+	client := l.client
+	if client == nil {
+		client, err = pubsubv1.NewSubscriberClient(subctx)
+		if err != nil {
+			l.logger.Printf("NewSubscriberClient failed: %v", err)
+			return err
+		}
+
+		// Close if internal.
+		defer client.Close()
 	}
 
-	defer client.Close()
 	subname := fmt.Sprintf("projects/%v/subscriptions/%v", l.project, l.subscription)
 	req := pubsubpb.PullRequest{Subscription: subname, MaxMessages: int32(l.maxMessages)}
 	backoff := time.Second * 1
