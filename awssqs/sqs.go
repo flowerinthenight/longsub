@@ -98,12 +98,18 @@ type LengthySubscriber struct {
 	callback          SqsMessageCallback
 }
 
-func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
+// Start starts the main goroutine handler. Terminates via 'ctx'. If 'done' is provided, will
+// send a message there to signal caller that it's done with processing.
+func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) error {
 	localId := uniuri.NewLen(10)
-	l.logger.Printf("sqs lengthy subscriber started, id=%v, time=%v", localId, time.Now())
+	l.logger.Printf("lengthy subscriber started, id=%v, time=%v",
+		localId, time.Now().Format(time.RFC3339))
 
 	defer func(begin time.Time) {
 		l.logger.Printf("duration=%v, id=%v", time.Since(begin), localId)
+		if len(done) > 0 {
+			done[0] <- nil
+		}
 	}(time.Now())
 
 	if l.timeout < 3 {
@@ -153,7 +159,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 
 	vis, err := strconv.Atoi(*attrOut.Attributes[vistm])
 	if err != nil {
-		l.logger.Printf("visibility conv failed: %v", err)
+		l.logger.Printf("strconv.Atoi failed: %v", err)
 		return err
 	}
 
@@ -191,7 +197,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 		})
 
 		if err != nil {
-			l.logger.Printf("get queue url failed: %v", err)
+			l.logger.Printf("ReceiveMessage failed: %v", err)
 			continue
 		}
 
@@ -232,8 +238,8 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 								if ok {
 									// TODO: Surely, there has to be a better way.
 									// Actual error:
-									//  err=InvalidParameterValue: Value 30 for parameter VisibilityTimeout is invalid.
-									//  Reason: Total VisibilityTimeout for the message is beyond the limit [43200 seconds].
+									// err=InvalidParameterValue: Value 30 for parameter VisibilityTimeout is invalid.
+									// Reason: Total VisibilityTimeout for the message is beyond the limit [43200 seconds].
 									if strings.Contains(strings.ToLower(err.Error()), "beyond the limit") {
 										return
 									}
@@ -244,7 +250,9 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 									change = false // do nothing on tick onwards
 								}
 
-								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed: %v", l.queue, receiptHandle, err)
+								l.logger.Printf("[q=%v] extend visibility timeout for [%v] failed: %v",
+									l.queue, receiptHandle, err)
+
 								continue
 							}
 
@@ -275,7 +283,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 			})
 
 			if err != nil {
-				l.logger.Printf("delete message failed: %v", err)
+				l.logger.Printf("DeleteMessage failed: %v", err)
 			}
 		}
 
@@ -284,10 +292,11 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 		<-extendch // and wait
 	}
 
-	done <- <-donech
+	<-donech
 	return nil
 }
 
+// NewLengthySubscriber creates a lengthy subscriber object for SQS.
 func NewLengthySubscriber(ctx interface{}, queue string, callback SqsMessageCallback, o ...Option) *LengthySubscriber {
 	s := &LengthySubscriber{
 		ctx:      ctx,
@@ -305,7 +314,7 @@ func NewLengthySubscriber(ctx interface{}, queue string, callback SqsMessageCall
 	}
 
 	if s.logger == nil {
-		s.logger = log.New(os.Stdout, "[sqs] ", 0)
+		s.logger = log.New(os.Stdout, "[longsub/sqs] ", 0)
 	}
 
 	return s

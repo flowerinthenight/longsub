@@ -12,6 +12,8 @@ import (
 	"github.com/dchest/uniuri"
 	"github.com/flowerinthenight/longsub"
 	pubsubpb "google.golang.org/genproto/googleapis/pubsub/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Callback func(ctx interface{}, data []byte) error
@@ -26,6 +28,13 @@ func (w withDeadline) Apply(o *LengthySubscriber) { o.deadline = int(w) }
 
 // WithDeadline sets the deadline option.
 func WithDeadline(v int) Option { return withDeadline(v) }
+
+type withNoExtend bool
+
+func (w withNoExtend) Apply(o *LengthySubscriber) { o.noExtend = bool(w) }
+
+// WithNoExtend sets the flag to not extend the visibility timeout.
+func WithNoExtend(v bool) Option { return withNoExtend(v) }
 
 type withLogger struct{ l *log.Logger }
 
@@ -44,33 +53,37 @@ type LengthySubscriber struct {
 
 	logger *log.Logger
 
-	// Count for our exponential backoff for pull errors.
-	backoffMax int
+	backoffMax int  // count for our exponential backoff for pull errors
+	noExtend   bool // if true, no attempt to extend visibility per message
 }
 
-func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
+// Start starts the main goroutine handler. Terminates via 'ctx'. If 'done' is provided, will
+// send a message there to signal caller that it's done with processing.
+func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error {
 	localId := uniuri.NewLen(10)
-	l.logger.Printf("pubsub lengthy subscriber started, id=%v, time=%v", localId, time.Now())
+	l.logger.Printf("lengthy subscriber started, id=%v, time=%v",
+		localId, time.Now().Format(time.RFC3339))
 
 	defer func(begin time.Time) {
 		l.logger.Printf("duration=%v, id=%v", time.Since(begin), localId)
+		if len(done) > 0 {
+			done[0] <- nil
+		}
 	}(time.Now())
 
 	var term int32
 	go func() {
-		<-quit.Done()
-		l.logger.Printf("requested to terminate, id=%v", localId)
+		<-ctx.Done() // for when we're past client.Pull()
 		atomic.StoreInt32(&term, 1)
 	}()
 
-	ctx := context.TODO()
-	client, err := pubsubv1.NewSubscriberClient(ctx)
+	subctx := context.WithValue(ctx, struct{}{}, nil)
+	client, err := pubsubv1.NewSubscriberClient(subctx)
 	if err != nil {
 		return err
 	}
 
 	defer client.Close()
-
 	subname := fmt.Sprintf("projects/%v/subscriptions/%v", l.project, l.subscription)
 	req := pubsubpb.PullRequest{Subscription: subname, MaxMessages: int32(l.maxMessages)}
 	backoff := time.Second * 1
@@ -80,13 +93,19 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 
 	for {
 		if atomic.LoadInt32(&term) > 0 {
-			l.logger.Printf("id=%v terminated", localId)
-			done <- nil
 			return nil
 		}
 
-		res, err := client.Pull(ctx, &req)
+		res, err := client.Pull(subctx, &req)
 		if err != nil {
+			st, ok := status.FromError(err)
+			if ok {
+				if st.Code() == codes.Canceled {
+					l.logger.Printf("[%v] cancelled, done", localId)
+					return nil
+				}
+			}
+
 			l.logger.Printf("client pull failed, backoff=%v: %v", backoff, err)
 			time.Sleep(backoff)
 			backoff = backoff * 2
@@ -110,40 +129,46 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 			ids = append(ids, m.AckId)
 		}
 
-		var finishc = make(chan error)
+		var xfinish = make(chan error)
+		var xdone = make(chan struct{}, 1)
 		var delay = 0 * time.Second // tick immediately upon reception
 		var ackDeadline = time.Second * time.Duration(l.deadline)
 
-		// Continuously notify the server that processing is still happening on this batch.
-		go func() {
-			defer l.logger.Printf("ack extender done for %v", ids)
+		// Continuously notify PubSub that processing is still happening on this batch.
+		if !l.noExtend {
+			go func() {
+				defer func() {
+					l.logger.Printf("ack extender done for %v", ids)
+					xdone <- struct{}{}
+				}()
 
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-finishc:
-					return
-				case <-time.After(delay):
-					l.logger.Printf("modify ack deadline for %vs, ids=%v", ackDeadline.Seconds(), ids)
+				for {
+					select {
+					case <-subctx.Done():
+						return
+					case <-xfinish:
+						return
+					case <-time.After(delay):
+						l.logger.Printf("modify ack deadline for %vs, ids=%v", ackDeadline.Seconds(), ids)
 
-					err := client.ModifyAckDeadline(ctx, &pubsubpb.ModifyAckDeadlineRequest{
-						Subscription:       subname,
-						AckIds:             ids,
-						AckDeadlineSeconds: int32(ackDeadline.Seconds()),
-					})
+						err := client.ModifyAckDeadline(subctx, &pubsubpb.ModifyAckDeadlineRequest{
+							Subscription:       subname,
+							AckIds:             ids,
+							AckDeadlineSeconds: int32(ackDeadline.Seconds()),
+						})
 
-					if err != nil {
-						l.logger.Printf("ModifyAckDeadline failed: %v", err)
+						if err != nil {
+							l.logger.Printf("ModifyAckDeadline failed: %v", err)
+						}
+
+						delay = ackDeadline - 10*time.Second // 10 seconds grace period
 					}
-
-					delay = ackDeadline - 10*time.Second // 10 seconds grace period
 				}
-			}
-		}()
+			}()
+		}
 
 		eachmsgc := make(chan error)
-		doneallc := make(chan error)
+		doneallc := make(chan error, 1)
 
 		// Wait for all messages in this batch (of 1 message, actually) to finish.
 		if len(res.ReceivedMessages) > 0 {
@@ -151,7 +176,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 				count := 0
 				for {
 					<-eachmsgc
-					count += 1
+					count++
 					if count >= n {
 						doneallc <- nil
 						return
@@ -182,7 +207,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 				}
 
 				if ack {
-					err = client.Acknowledge(ctx, &pubsubpb.AcknowledgeRequest{
+					err = client.Acknowledge(subctx, &pubsubpb.AcknowledgeRequest{
 						Subscription: subname,
 						AckIds:       []string{rm.AckId},
 					})
@@ -196,16 +221,15 @@ func (l *LengthySubscriber) Start(quit context.Context, done chan error) error {
 			}(msg)
 		}
 
-		// Wait for all messages (just 1 actually) to finish.
-		<-doneallc
-
-		// This will terminate our ack extender goroutine.
-		close(finishc)
+		<-doneallc     // wait for all messages (just 1 actually) to finish
+		close(xfinish) // this will terminate our ack extender goroutine
+		if !l.noExtend {
+			<-xdone // wait for our extender
+		}
 	}
-
-	return nil
 }
 
+// NewLengthySubscriber creates a lengthy subscriber object for PubSub.
 func NewLengthySubscriber(ctx interface{}, project, subscription string, callback Callback, o ...Option) *LengthySubscriber {
 	s := &LengthySubscriber{
 		ctx:          ctx,
@@ -222,7 +246,7 @@ func NewLengthySubscriber(ctx interface{}, project, subscription string, callbac
 	}
 
 	if s.logger == nil {
-		s.logger = log.New(os.Stdout, "[pubsub] ", 0)
+		s.logger = log.New(os.Stdout, "[longsub/pubsub] ", 0)
 	}
 
 	return s
