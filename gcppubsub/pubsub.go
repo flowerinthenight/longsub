@@ -37,6 +37,13 @@ func (w withDeadline) Apply(o *LengthySubscriber) { o.deadline = int(w) }
 // WithDeadline sets the deadline option.
 func WithDeadline(v int) Option { return withDeadline(v) }
 
+type withMaxMessages int
+
+func (w withMaxMessages) Apply(o *LengthySubscriber) { o.maxMessages = int(w) }
+
+// WithMaxMessages sets the maximum messages retrieved during a pull. Default = 1.
+func WithMaxMessages(v int) Option { return withMaxMessages(v) }
+
 type withNoExtend bool
 
 func (w withNoExtend) Apply(o *LengthySubscriber) { o.noExtend = bool(w) }
