@@ -55,7 +55,9 @@ type withLogger struct{ l *log.Logger }
 
 func (w withLogger) Apply(o *LengthySubscriber) { o.logger = w.l }
 
-// WithLogger sets the logger option.
+// WithLogger sets the logger option. Can be silenced by setting v to:
+//
+//	log.New(ioutil.Discard, "", 0)
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
