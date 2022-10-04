@@ -122,10 +122,11 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 	})
 
 	var svc *sqs.SQS
-	if l.roleArn != "" {
+	switch {
+	case l.roleArn != "":
 		cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, l.roleArn)}
 		svc = sqs.New(sess, cnf)
-	} else {
+	default:
 		svc = sqs.New(sess)
 	}
 
@@ -133,28 +134,30 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 	queueName := l.queue
 	vistm := "VisibilityTimeout"
 
-	resultURL, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{QueueName: aws.String(queueName)})
+	resultUrl, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{QueueName: aws.String(queueName)})
 	if err != nil {
-		if !l.fatalOnQueueError {
+		switch {
+		case !l.fatalOnQueueError:
 			l.logger.Printf("GetQueueUrl failed: %v", err)
 			return err
+		default:
+			l.logger.Fatalf("GetQueueUrl failed: %v", err)
 		}
-
-		l.logger.Fatalf("GetQueueUrl failed: %v", err)
 	}
 
 	attrOut, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
 		AttributeNames: []*string{&vistm},
-		QueueUrl:       resultURL.QueueUrl,
+		QueueUrl:       resultUrl.QueueUrl,
 	})
 
 	if err != nil {
-		if !l.fatalOnQueueError {
+		switch {
+		case !l.fatalOnQueueError:
 			l.logger.Printf("GetQueueAttributes failed: %v", err)
 			return err
+		default:
+			l.logger.Fatalf("GetQueueAttributes failed: %v", err)
 		}
-
-		l.logger.Fatalf("GetQueueAttributes failed: %v", err)
 	}
 
 	vis, err := strconv.Atoi(*attrOut.Attributes[vistm])
@@ -186,7 +189,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 		}
 
 		result, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
-			QueueUrl:              resultURL.QueueUrl,
+			QueueUrl:              resultUrl.QueueUrl,
 			AttributeNames:        aws.StringSlice([]string{"SentTimestamp"}),
 			MaxNumberOfMessages:   aws.Int64(1),
 			MessageAttributeNames: aws.StringSlice([]string{"All"}),
@@ -207,12 +210,13 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 
 		var extendval = (vis / 3) * 2
 		var ticker = time.NewTicker(time.Duration(extendval) * time.Second)
-		var extend, cancel = context.WithCancel(context.TODO())
+		var extend, cancel = context.WithCancel(context.Background())
 		extendch := make(chan error, 1)
 
-		if l.noExtend {
+		switch {
+		case l.noExtend:
 			extendch <- nil
-		} else {
+		default:
 			go func(queueUrl, receiptHandle string) {
 				defer func() {
 					l.logger.Printf("visibility timeout extender done for [%v]", receiptHandle)
@@ -261,7 +265,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 						}
 					}
 				}
-			}(*resultURL.QueueUrl, *result.Messages[0].ReceiptHandle)
+			}(*resultUrl.QueueUrl, *result.Messages[0].ReceiptHandle)
 		}
 
 		ack := true
@@ -278,7 +282,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 
 		if ack {
 			_, err = svc.DeleteMessage(&sqs.DeleteMessageInput{
-				QueueUrl:      resultURL.QueueUrl,
+				QueueUrl:      resultUrl.QueueUrl,
 				ReceiptHandle: result.Messages[0].ReceiptHandle,
 			})
 
