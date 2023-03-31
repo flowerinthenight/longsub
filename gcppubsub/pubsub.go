@@ -330,6 +330,10 @@ func Do(ctx context.Context, args DoArgs) error {
 	}
 
 	sub.ReceiveSettings.MaxOutstandingMessages = maxOutstandingMessages
+	if maxOutstandingMessages == 1 {
+		sub.ReceiveSettings.Synchronous = true
+	}
+
 	err = sub.Receive(ctx, args.ReceiveCallback)
 	if err != nil {
 		return fmt.Errorf("Receive failed: %w", err)
