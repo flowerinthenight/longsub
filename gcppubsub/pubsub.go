@@ -298,15 +298,16 @@ type DoArgs struct {
 	AckDeadline time.Duration
 }
 
-// Do is our helper function to setup an async PubSub subscription. This is preferred than
-// LengthySubscriber (above) as this is supported by the PubSub client itself and is the
-// recommended way. This is not to say that LengthySubscriber doesn't work anymore; it
-// still does. It was quite useful before GCP client released their async support.
+// Do is our helper function to setup an async PubSub subscription. So far, this
+// works as intended but the frequency of multiple redelivery of messages is
+// surprisingly high than LengthySubscriber. Still under observation while being
+// used in non-critical workflows.
 //
-// Since this is a long subscription library, the default use case is that every message's
-// processing time will most likely be beyond the subscription's ack time and will be
-// processing one message at a time, although you can set 'MaxOutstandingMessages' to > 1
-// in which case some form of concurrent processing can still be done.
+// Since this is a long subscription library, the default use case is that every
+// message's processing time will most likely be beyond the subscription's ack
+// time and will be processing one message at a time, although you can set
+// 'MaxOutstandingMessages' to > 1 in which case some form of concurrent
+// processing can still be done.
 //
 // The function will block until ctx is cancelled or if setup returns an error.
 func Do(ctx context.Context, args DoArgs) error {
