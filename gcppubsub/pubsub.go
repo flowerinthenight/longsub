@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"cloud.google.com/go/pubsub"
 	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
 	"github.com/dchest/uniuri"
 	"github.com/flowerinthenight/longsub"
@@ -275,4 +276,64 @@ func NewLengthySubscriber(ctx interface{}, project, subscription string, callbac
 	}
 
 	return s
+}
+
+type DoArgs struct {
+	ProjectId      string // required
+	TopicId        string // required
+	SubscriptionId string // required
+
+	// Required. The callback function to process the message asynchronously.
+	// The callback is responsible for ack'ing the message or not.
+	ReceiveCallback func(context.Context, *pubsub.Message)
+
+	MaxOutstandingMessages int // optional, defaults to 1
+
+	// Optional. Used only when creating the subscription (if not exists).
+	// Defaults to 1 minute.
+	AckDeadline time.Duration
+}
+
+// Do is our helper function to setup an async PubSub subscription. This is preferred than
+// LengthySubscriber (above) as this is supported by the PubSub client itself and is the
+// recommended way. This is not to say that LengthySubscriber doesn't work anymore; it
+// still does. It was useful before GCP client released their async support.
+//
+// Since this is a long subscription library, the default use case is that every message's
+// processing time will most likely be beyond the subscription's ack time and will be
+// processing one message at a time, although you can set 'MaxOutstandingMessages' to > 1
+// in which case some form of concurrent processing can still be done.
+//
+// The function will block until ctx is cancelled or if setup returns an error.
+func Do(ctx context.Context, args DoArgs) error {
+	t, err := GetTopic(args.ProjectId, args.TopicId) // ensure
+	if err != nil {
+		return fmt.Errorf("GetTopic failed: %w", err)
+	}
+
+	bctx := context.Background()
+	client, err := pubsub.NewClient(bctx, args.ProjectId)
+	if err != nil {
+		return fmt.Errorf("NewClient failed: %w", err)
+	}
+
+	defer client.Close()
+	_, err = GetSubscription(args.ProjectId, args.SubscriptionId, t) // ensure
+	if err != nil {
+		return fmt.Errorf("GetSubscription failed: %w", err)
+	}
+
+	sub := client.Subscription(args.SubscriptionId)
+	maxOutstandingMessages := 1
+	if args.MaxOutstandingMessages > 1 {
+		maxOutstandingMessages = args.MaxOutstandingMessages
+	}
+
+	sub.ReceiveSettings.MaxOutstandingMessages = maxOutstandingMessages
+	err = sub.Receive(ctx, args.ReceiveCallback)
+	if err != nil {
+		return fmt.Errorf("Receive failed: %w", err)
+	}
+
+	return nil
 }

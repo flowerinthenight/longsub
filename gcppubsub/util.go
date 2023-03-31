@@ -19,7 +19,7 @@ func GetTopic(project, id string) (*gpubsub.Topic, error) {
 		return nil, fmt.Errorf("NewClient failed: %w", err)
 	}
 
-	defer client.Close()
+	// defer client.Close()
 	topic := client.Topic(id)
 	exists, err := topic.Exists(ctx)
 	if err != nil {
@@ -42,7 +42,7 @@ func GetSubscription(project, id string, topic *gpubsub.Topic, ackdeadline ...ti
 		return nil, fmt.Errorf("NewClient failed: %w", err)
 	}
 
-	defer client.Close()
+	// defer client.Close()
 	sub := client.Subscription(id)
 	exists, err := sub.Exists(ctx)
 	if err != nil {
