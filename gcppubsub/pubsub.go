@@ -289,6 +289,10 @@ type DoArgs struct {
 
 	MaxOutstandingMessages int // optional, defaults to 1
 
+	// Optional. Defaults to true when MaxOutstandingMessages is 1, else it
+	// defaults to false (StreamingPull/async).
+	Synchronous bool
+
 	// Optional. Used only when creating the subscription (if not exists).
 	// Defaults to 1 minute.
 	AckDeadline time.Duration
@@ -330,6 +334,7 @@ func Do(ctx context.Context, args DoArgs) error {
 	}
 
 	sub.ReceiveSettings.MaxOutstandingMessages = maxOutstandingMessages
+	sub.ReceiveSettings.Synchronous = args.Synchronous
 	if maxOutstandingMessages == 1 {
 		sub.ReceiveSettings.Synchronous = true
 	}
