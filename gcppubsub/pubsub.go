@@ -301,7 +301,7 @@ type DoArgs struct {
 // Do is our helper function to setup an async PubSub subscription. This is preferred than
 // LengthySubscriber (above) as this is supported by the PubSub client itself and is the
 // recommended way. This is not to say that LengthySubscriber doesn't work anymore; it
-// still does. It was useful before GCP client released their async support.
+// still does. It was quite useful before GCP client released their async support.
 //
 // Since this is a long subscription library, the default use case is that every message's
 // processing time will most likely be beyond the subscription's ack time and will be
