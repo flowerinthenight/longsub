@@ -164,7 +164,7 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 		if !l.noExtend {
 			go func() {
 				defer func() {
-					l.logger.Printf("ack extender done for %v", ids)
+					l.logger.Printf("%s: ack extender done for %v", subname, ids)
 					xdone <- struct{}{}
 				}()
 
@@ -175,13 +175,16 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 					case <-xfinish:
 						return
 					case <-time.After(delay):
-						l.logger.Printf("modify ack deadline for %vs, ids=%v", ackDeadline.Seconds(), ids)
+						l.logger.Printf("%s: modify ack deadline for %vs, ids=%v",
+							subname, ackDeadline.Seconds(), ids)
 
-						err := client.ModifyAckDeadline(subctx, &pubsubpb.ModifyAckDeadlineRequest{
-							Subscription:       subname,
-							AckIds:             ids,
-							AckDeadlineSeconds: int32(ackDeadline.Seconds()),
-						})
+						err := client.ModifyAckDeadline(subctx,
+							&pubsubpb.ModifyAckDeadlineRequest{
+								Subscription:       subname,
+								AckIds:             ids,
+								AckDeadlineSeconds: int32(ackDeadline.Seconds()),
+							},
+						)
 
 						if err != nil {
 							l.logger.Printf("ModifyAckDeadline failed: %v", err)
