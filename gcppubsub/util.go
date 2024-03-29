@@ -64,6 +64,37 @@ func GetSubscription(project, id string, topic *gpubsub.Topic, ackdeadline ...ti
 	return sub, nil
 }
 
+// DelSubscription converts the client into an utter introvert.
+func DelSubscription(project, name string) error {
+	ctx := context.Background()
+	client, err := gpubsub.NewClient(ctx, project)
+	if err != nil {
+		return fmt.Errorf("NewClient failed: %w", err)
+	}
+
+	defer client.Close()
+	sub := client.Subscription(name)
+	exists, err := sub.Exists(ctx)
+	if err != nil {
+		return fmt.Errorf("Exists failed: %w", err)
+	}
+
+	if exists {
+		err = sub.Delete(ctx)
+		if err != nil {
+			return fmt.Errorf("Delete failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// PublishRaw is a convenience function for publishing raw data to a topic.
+func PublishRaw(ctx context.Context, topic *gpubsub.Topic, msg []byte) (string, error) {
+	res := topic.Publish(ctx, &gpubsub.Message{Data: msg})
+	return res.Get(ctx)
+}
+
 // GetPublisher is a simple wrapper to create a PubSub publisher using gizmo's Publisher interface.
 //
 // Deprecated: The gizmo package used in this function is now unmaintained.
@@ -125,29 +156,4 @@ func NewPubsubPublisher(projectId string, topicname string) (*PubsubPublisher, e
 	}
 
 	return &PubsubPublisher{cp, t}, nil
-}
-
-// DelSubscription converts the client into an utter introvert.
-func DelSubscription(project, name string) error {
-	ctx := context.Background()
-	client, err := gpubsub.NewClient(ctx, project)
-	if err != nil {
-		return fmt.Errorf("NewClient failed: %w", err)
-	}
-
-	defer client.Close()
-	sub := client.Subscription(name)
-	exists, err := sub.Exists(ctx)
-	if err != nil {
-		return fmt.Errorf("Exists failed: %w", err)
-	}
-
-	if exists {
-		err = sub.Delete(ctx)
-		if err != nil {
-			return fmt.Errorf("Delete failed: %w", err)
-		}
-	}
-
-	return nil
 }

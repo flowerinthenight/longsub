@@ -37,7 +37,7 @@ func main() {
 	subscription := "longsub-testtopic"
 
 	// Get topic, create if needed.
-	p, t, err := gcppubsub.GetPublisher(*project, topic)
+	t, err := gcppubsub.GetTopic(*project, topic)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func main() {
 	}()
 
 	time.Sleep(time.Second * 5) // subscriber should be ready by now
-	p.PublishRaw(context.Background(), "", []byte("hello world"))
+	gcppubsub.PublishRaw(ctx, t, []byte("hello world"))
 
 	if !*noextend {
 		time.Sleep(time.Minute * 2) // wait for longCallback()
