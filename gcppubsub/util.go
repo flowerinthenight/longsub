@@ -65,6 +65,8 @@ func GetSubscription(project, id string, topic *gpubsub.Topic, ackdeadline ...ti
 }
 
 // GetPublisher is a simple wrapper to create a PubSub publisher using gizmo's Publisher interface.
+//
+// Deprecated: The gizmo package used in this function is now unmaintained.
 func GetPublisher(project, id string) (zpubsub.MultiPublisher, *gpubsub.Topic, error) {
 	ctx := context.Background()
 	// Ensure that it exists.
@@ -114,6 +116,7 @@ func (p *PubsubPublisher) Publish(key string, data interface{}) error {
 
 func (p *PubsubPublisher) RawTopic() *gpubsub.Topic { return p.rt }
 
+// Deprecated: The gizmo package used in this function is now unmaintained.
 func NewPubsubPublisher(projectId string, topicname string) (*PubsubPublisher, error) {
 	// Make sure the publisher is created if it doesn't exist.
 	cp, t, err := GetPublisher(projectId, topicname)
