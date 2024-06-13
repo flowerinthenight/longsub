@@ -29,4 +29,4 @@ For GCP, either the following environment variable:
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/svcacct.json
 ```
 
-or access from the runtime environment (if any) is required.
+or Pub/Sub access from the runtime environment (if any) is required.
