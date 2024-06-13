@@ -24,7 +24,9 @@ AWS_SECRET_ACCESS_KEY
 ROLE_ARN
 ```
 
-For GCP, the path of the service account JSON file is required.
+For GCP, either the following environment variable:
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=/etc/longsub/svcacct.json
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/svcacct.json
 ```
+
+or access from the runtime environment (if any) is required.
