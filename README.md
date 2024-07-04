@@ -19,8 +19,8 @@ AWS_REGION
 AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
 
-# Optional. If non-empty, package will attempt to assume this role
-# using the key/secret above.
+# Optional. If non-empty, package will attempt
+# to assume this role using the key/secret above.
 ROLE_ARN
 ```
 
