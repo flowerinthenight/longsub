@@ -26,3 +26,12 @@ jobs:
     - name: Run tests
       run: |
         go test -v ./...
+
+    - name: Build samples
+      run: |
+        ROOTDIR=$PWD
+        cd examples/aws/
+        go build -v
+        cd $ROOTDIR/
+        cd examples/gcp/
+        go build -v
