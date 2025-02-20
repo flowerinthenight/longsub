@@ -30,3 +30,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/svcacct.json
 ```
 
 or Pub/Sub access from the runtime environment (for ex., GCE, Workload Identity Federation, etc.) is required.
+
+## License
+
+This library is licensed under the [MIT License](./LICENSE).
