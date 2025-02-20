@@ -311,7 +311,7 @@ func NewLengthySubscriber(ctx interface{}, queue string, callback SqsMessageCall
 		key:      os.Getenv("AWS_ACCESS_KEY_ID"),
 		secret:   os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		roleArn:  os.Getenv("ROLE_ARN"),
-		timeout:  5,
+		timeout:  20,
 		callback: callback,
 	}
 
