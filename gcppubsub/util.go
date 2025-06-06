@@ -64,6 +64,47 @@ func GetSubscription(project, id string, topic *gpubsub.Topic, ackdeadline ...ti
 	return sub, nil
 }
 
+type GetSubScription2Extra struct {
+	AckDeadline           time.Duration
+	EnableMessageOrdering bool
+}
+
+// GetSubscription2 is GetSubscription with a more flexible options.
+func GetSubscription2(project, id string, topic *gpubsub.Topic, extra ...GetSubScription2Extra) (*gpubsub.Subscription, error) {
+	ctx := context.Background()
+	client, err := gpubsub.NewClient(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("NewClient failed: %w", err)
+	}
+
+	// defer client.Close()
+	sub := client.Subscription(id)
+	exists, err := sub.Exists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Exists failed: %w", err)
+	}
+
+	if !exists {
+		deadline := time.Second * 60
+		if len(extra) > 0 && extra[0].AckDeadline > 0 {
+			deadline = extra[0].AckDeadline
+		}
+
+		var enableMessageOrdering bool
+		if len(extra) > 0 {
+			enableMessageOrdering = extra[0].EnableMessageOrdering
+		}
+
+		return client.CreateSubscription(ctx, id, gpubsub.SubscriptionConfig{
+			Topic:                 topic,
+			AckDeadline:           deadline,
+			EnableMessageOrdering: enableMessageOrdering,
+		})
+	}
+
+	return sub, nil
+}
+
 // DelSubscription converts the client into an utter introvert.
 func DelSubscription(project, name string) error {
 	ctx := context.Background()
