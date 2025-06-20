@@ -17,7 +17,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type Callback func(ctx any, data []byte) error
+type CallbackArgs struct {
+	Data       []byte
+	Attributes map[string]string
+}
+
+type Callback func(ctx any, args CallbackArgs) error
 
 type Option interface {
 	Apply(*LengthySubscriber)
@@ -221,10 +226,18 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 					l.logger.Printf("duration=%v, ids=%v", time.Since(begin), ids)
 				}(time.Now())
 
-				l.logger.Printf("payload=%v, ids=%v", string(rm.Message.Data), ids)
+				l.logger.Printf("payload=%v, attrs=%v, ids=%v",
+					string(rm.Message.Data),
+					rm.Message.Attributes,
+					ids,
+				)
 
 				ack := true
-				err := l.callback(l.ctx, rm.Message.Data) // process message via callback
+				err := l.callback(l.ctx, CallbackArgs{
+					Data:       rm.Message.Data,
+					Attributes: rm.Message.Attributes,
+				})
+
 				if err != nil {
 					if rq, ok := err.(longsub.Requeuer); ok {
 						if rq.ShouldRequeue() {
