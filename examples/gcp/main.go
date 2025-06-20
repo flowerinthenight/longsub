@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/flowerinthenight/longsub/gcppubsub"
+	"github.com/flowerinthenight/longsub/v2/gcppubsub"
 )
 
 var (
@@ -14,7 +14,7 @@ var (
 	noextend = flag.Bool("noextend", false, "if true, disable message extender")
 )
 
-func longCallback(ctx interface{}, data []byte) error {
+func longCallback(ctx any, data []byte) error {
 	log.Println("recv:", string(data))
 	log.Println("start long task (>1min)...")
 	time.Sleep(time.Second * 90) // more than the ack deadline
@@ -22,7 +22,7 @@ func longCallback(ctx interface{}, data []byte) error {
 	return nil
 }
 
-func callback(ctx interface{}, data []byte) error {
+func callback(ctx any, data []byte) error {
 	log.Println("recv:", string(data))
 	log.Println("callback done")
 	return nil

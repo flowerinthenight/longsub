@@ -168,7 +168,7 @@ func (p *PubsubPublisher) Test() error {
 	return p.mp.PublishRaw(context.Background(), "test", []byte("hello world"))
 }
 
-func (p *PubsubPublisher) Publish(key string, data interface{}) error {
+func (p *PubsubPublisher) Publish(key string, data any) error {
 	if p.mp == nil {
 		return fmt.Errorf("publisher is nil")
 	}
