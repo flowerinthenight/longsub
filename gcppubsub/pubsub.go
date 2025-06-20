@@ -12,12 +12,17 @@ import (
 	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
 	"cloud.google.com/go/pubsub/apiv1/pubsubpb"
 	"github.com/dchest/uniuri"
-	"github.com/flowerinthenight/longsub"
+	"github.com/flowerinthenight/longsub/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type Callback func(ctx interface{}, data []byte) error
+type CallbackArgs struct {
+	Data       []byte
+	Attributes map[string]string
+}
+
+type Callback func(ctx any, args CallbackArgs) error
 
 type Option interface {
 	Apply(*LengthySubscriber)
@@ -62,7 +67,7 @@ func (w withLogger) Apply(o *LengthySubscriber) { o.logger = w.l }
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
-	ctx          interface{} // any arbitrary data passed to callback
+	ctx          any // any arbitrary data passed to callback
 	client       *pubsubv1.SubscriberClient
 	project      string
 	subscription string
@@ -221,10 +226,18 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 					l.logger.Printf("duration=%v, ids=%v", time.Since(begin), ids)
 				}(time.Now())
 
-				l.logger.Printf("payload=%v, ids=%v", string(rm.Message.Data), ids)
+				l.logger.Printf("payload=%v, attrs=%v, ids=%v",
+					string(rm.Message.Data),
+					rm.Message.Attributes,
+					ids,
+				)
 
 				ack := true
-				err := l.callback(l.ctx, rm.Message.Data) // process message via callback
+				err := l.callback(l.ctx, CallbackArgs{
+					Data:       rm.Message.Data,
+					Attributes: rm.Message.Attributes,
+				})
+
 				if err != nil {
 					if rq, ok := err.(longsub.Requeuer); ok {
 						if rq.ShouldRequeue() {
@@ -259,7 +272,7 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 }
 
 // NewLengthySubscriber creates a lengthy subscriber object for PubSub.
-func NewLengthySubscriber(ctx interface{}, project, subscription string, callback Callback, o ...Option) *LengthySubscriber {
+func NewLengthySubscriber(ctx any, project, subscription string, callback Callback, o ...Option) *LengthySubscriber {
 	s := &LengthySubscriber{
 		ctx:          ctx,
 		project:      project,

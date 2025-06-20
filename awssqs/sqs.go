@@ -17,10 +17,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/dchest/uniuri"
-	"github.com/flowerinthenight/longsub"
+	"github.com/flowerinthenight/longsub/v2"
 )
 
-type SqsMessageCallback func(ctx interface{}, data []byte) error
+type SqsMessageCallback func(ctx any, data []byte) error
 
 type Option interface {
 	Apply(*LengthySubscriber)
@@ -85,7 +85,7 @@ func (w withLogger) Apply(o *LengthySubscriber) { o.logger = w.l }
 func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
-	ctx    interface{} // arbitrary data passed to callback function
+	ctx    any // arbitrary data passed to callback function
 	queue  string
 	logger *log.Logger
 
@@ -303,7 +303,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 }
 
 // NewLengthySubscriber creates a lengthy subscriber object for SQS.
-func NewLengthySubscriber(ctx interface{}, queue string, callback SqsMessageCallback, o ...Option) *LengthySubscriber {
+func NewLengthySubscriber(ctx any, queue string, callback SqsMessageCallback, o ...Option) *LengthySubscriber {
 	s := &LengthySubscriber{
 		ctx:      ctx,
 		queue:    queue,
