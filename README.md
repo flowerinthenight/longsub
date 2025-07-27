@@ -8,7 +8,8 @@
 
 `longsub` is a small wrapper package for lengthy subscriptions for both [AWS SQS](https://aws.amazon.com/sqs/) and [GCP Pub/Sub](https://cloud.google.com/pubsub/). It will setup the subscription and attempts to extend the processing window at message level until the processing is done, or failed, or requeued. Useful if you want to keep the queue timeout relatively short (for quick message redelivery) but have the option for subscribers to go beyond the timeout (without redelivery) to process each of the messages.
 
-`v2` changed the GCP callback arguments from `[]byte` in `v1` to `CallbackArgs` to include the `Attributes` map.
+> [!IMPORTANT]
+> `v2` changed the GCP callback arguments from `[]byte` in `v1` to `CallbackArgs` to include the `Attributes` map.
 
 Check out the [examples](./examples/) provided for reference on how to use the package.
 
