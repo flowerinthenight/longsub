@@ -3,9 +3,9 @@ name: main
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -17,17 +17,16 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Setup Go
-      uses: actions/setup-go@v4
+    - uses: actions/setup-go@v4
       with:
-        go-version: ^1.24
+        go-version: ^1.25
       id: go
 
-    - name: Run tests
+    - name: 'Run tests'
       run: |
         go test -v ./...
 
-    - name: Build samples
+    - name: 'Build samples'
       run: |
         ROOTDIR=$PWD
         cd examples/aws/
