@@ -215,6 +215,11 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 		var extend, cancel = context.WithCancel(context.Background())
 		extendch := make(chan error, 1)
 
+		defer func() {
+			ticker.Stop()
+			cancel() // terminate our extender
+		}()
+
 		switch {
 		case l.noExtend:
 			extendch <- nil
