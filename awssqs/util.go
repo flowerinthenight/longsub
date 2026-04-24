@@ -135,6 +135,39 @@ func (u *Helper) GetSqs(name string) (*string, map[string]*string, error) {
 	return create.QueueUrl, qAttr.Attributes, nil
 }
 
+// GetSqsFifo creates an SQS FIFO queue and returning the queue url and attributes.
+func (u *Helper) GetSqsFifo(name string) (*string, map[string]*string, error) {
+	if !strings.HasSuffix(name, ".fifo") {
+		name += ".fifo"
+	}
+
+	svc := u.sqsSvc()
+	policy := u.GetSqsAllowAllPolicy(name)
+	create, err := svc.CreateQueue(&sqs.CreateQueueInput{
+		QueueName: aws.String(name),
+		Attributes: map[string]*string{
+			"Policy":                        aws.String(policy),
+			"FifoQueue":                     aws.String("true"),
+			"ContentBasedDeduplication":     aws.String("true"),
+		},
+	})
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("CreateQueue failed: %w", err)
+	}
+
+	qAttr, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
+		QueueUrl:       create.QueueUrl,
+		AttributeNames: []*string{aws.String("All")},
+	})
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetQueueAttributes failed: %w", err)
+	}
+
+	return create.QueueUrl, qAttr.Attributes, nil
+}
+
 // GetTopic returns the ARN of a newly created topic or an existing one. CreateTopic API
 // returns the ARN of an existing topic.
 func (u *Helper) GetTopic(name string) (*string, error) {
