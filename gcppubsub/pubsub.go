@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cloud.google.com/go/pubsub"
-	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
-	"cloud.google.com/go/pubsub/apiv1/pubsubpb"
+	"cloud.google.com/go/pubsub/v2"
+	pubsubv1 "cloud.google.com/go/pubsub/v2/apiv1"
+	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"github.com/dchest/uniuri"
 	"github.com/flowerinthenight/longsub/v3"
 	"google.golang.org/grpc/codes"
@@ -28,13 +28,15 @@ type Option interface {
 	Apply(*LengthySubscriber)
 }
 
-type withClient struct{ c *pubsubv1.SubscriberClient }
+type withClient struct {
+	c *pubsubv1.SubscriptionAdminClient
+}
 
 func (w withClient) Apply(o *LengthySubscriber) { o.client = w.c }
 
 // WithClient sets the PubSub client. If not provided, an internal client is
 // used using the environment's credentials.
-func WithClient(v *pubsubv1.SubscriberClient) Option { return withClient{v} }
+func WithClient(v *pubsubv1.SubscriptionAdminClient) Option { return withClient{v} }
 
 type withDeadline int
 
@@ -68,7 +70,7 @@ func WithLogger(v *log.Logger) Option { return withLogger{v} }
 
 type LengthySubscriber struct {
 	ctx          any // any arbitrary data passed to callback
-	client       *pubsubv1.SubscriberClient
+	client       *pubsubv1.SubscriptionAdminClient
 	project      string
 	subscription string
 	deadline     int // seconds
@@ -105,9 +107,9 @@ func (l *LengthySubscriber) Start(ctx context.Context, done ...chan error) error
 	subctx := context.WithValue(ctx, struct{}{}, nil)
 	client := l.client
 	if client == nil {
-		client, err = pubsubv1.NewSubscriberClient(subctx)
+		client, err = pubsubv1.NewSubscriptionAdminClient(subctx)
 		if err != nil {
-			l.logger.Printf("NewSubscriberClient failed: %v", err)
+			l.logger.Printf("NewSubscriptionAdminClient failed: %v", err)
 			return err
 		}
 
@@ -305,10 +307,6 @@ type DoArgs struct {
 
 	MaxOutstandingMessages int // optional, defaults to 1
 
-	// Optional. Defaults to true when MaxOutstandingMessages is 1, else it
-	// defaults to false (StreamingPull/async).
-	Synchronous bool
-
 	// Optional. Used only when creating the subscription (if not exists).
 	// Defaults to 1 minute.
 	AckDeadline time.Duration
@@ -339,23 +337,18 @@ func Do(ctx context.Context, args DoArgs) error {
 	}
 
 	defer client.Close()
-	_, err = GetSubscription(args.ProjectId, args.SubscriptionId, t) // ensure
+	_, err = GetSubscription(args.ProjectId, args.SubscriptionId, t, args.AckDeadline) // ensure
 	if err != nil {
 		return fmt.Errorf("GetSubscription failed: %w", err)
 	}
 
-	sub := client.Subscription(args.SubscriptionId)
+	sub := client.Subscriber(args.SubscriptionId)
 	maxOutstandingMessages := 1
 	if args.MaxOutstandingMessages > 1 {
 		maxOutstandingMessages = args.MaxOutstandingMessages
 	}
 
 	sub.ReceiveSettings.MaxOutstandingMessages = maxOutstandingMessages
-	sub.ReceiveSettings.Synchronous = args.Synchronous
-	if maxOutstandingMessages == 1 {
-		sub.ReceiveSettings.Synchronous = true
-	}
-
 	err = sub.Receive(ctx, args.ReceiveCallback)
 	if err != nil {
 		return fmt.Errorf("Receive failed: %w", err)
