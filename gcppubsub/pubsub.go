@@ -12,7 +12,7 @@ import (
 	pubsubv1 "cloud.google.com/go/pubsub/apiv1"
 	"cloud.google.com/go/pubsub/apiv1/pubsubpb"
 	"github.com/dchest/uniuri"
-	"github.com/flowerinthenight/longsub/v2"
+	"github.com/flowerinthenight/longsub/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	v2 "github.com/flowerinthenight/longsub/v2/gcppubsub"
+	v3 "github.com/flowerinthenight/longsub/v3/gcppubsub"
 )
 
 var (
@@ -14,7 +14,7 @@ var (
 	noextend = flag.Bool("noextend", false, "if true, disable message extender")
 )
 
-func longCallback(ctx any, args v2.CallbackArgs) error {
+func longCallback(ctx any, args v3.CallbackArgs) error {
 	log.Println("recv:", string(args.Data))
 	log.Println("start long task (>1min)...")
 	time.Sleep(time.Second * 90) // more than the ack deadline
@@ -22,7 +22,7 @@ func longCallback(ctx any, args v2.CallbackArgs) error {
 	return nil
 }
 
-func callback(ctx any, args v2.CallbackArgs) error {
+func callback(ctx any, args v3.CallbackArgs) error {
 	log.Println("recv:", string(args.Data))
 	log.Println("callback done")
 	return nil
@@ -37,13 +37,13 @@ func main() {
 	subscription := "longsub-testtopic"
 
 	// Get topic, create if needed.
-	t, err := v2.GetTopic(*project, topic)
+	t, err := v3.GetTopic(*project, topic)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Then subscribe. Ack deadline should be 1min by default.
-	_, err = v2.GetSubscription(*project, subscription, t)
+	_, err = v3.GetSubscription(*project, subscription, t)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,11 +52,11 @@ func main() {
 	done := make(chan error, 1)
 	go func() {
 		if *noextend {
-			ls := v2.NewLengthySubscriber(ctx,
+			ls := v3.NewLengthySubscriber(ctx,
 				*project,
 				subscription,
 				callback,
-				v2.WithNoExtend(true),
+				v3.WithNoExtend(true),
 			)
 
 			err := ls.Start(ctx, done)
@@ -64,7 +64,7 @@ func main() {
 				log.Fatal(err)
 			}
 		} else {
-			ls := v2.NewLengthySubscriber(ctx, *project, subscription, longCallback)
+			ls := v3.NewLengthySubscriber(ctx, *project, subscription, longCallback)
 			err := ls.Start(ctx, done)
 			if err != nil {
 				log.Fatal(err)
@@ -73,7 +73,7 @@ func main() {
 	}()
 
 	time.Sleep(time.Second * 5) // subscriber should be ready by now
-	v2.PublishRaw(ctx, t, []byte("hello world"))
+	v3.PublishRaw(ctx, t, []byte("hello world"))
 
 	if !*noextend {
 		time.Sleep(time.Minute * 2) // wait for longCallback()

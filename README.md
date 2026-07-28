@@ -17,15 +17,18 @@ Check out the [examples](./examples/) provided for reference on how to use the p
 
 For AWS, the following environment variables will be used.
 ```bash
-# Required
 AWS_REGION
 AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
 
 # Optional. If non-empty, longsub will attempt to
-# assume this role using the key/secret above.
+# assume this role using the credentials above.
 ROLE_ARN
 ```
+
+If `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are empty, longsub falls back to the AWS SDK's
+default credential chain (shared config, IRSA, ECS task role, EC2 IMDS), so it also works when
+running under an instance profile or service account with no static keys.
 
 For GCP, either the following environment variable:
 ```bash

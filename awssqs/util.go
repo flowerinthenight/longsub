@@ -1,16 +1,15 @@
 package awssqs
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sns"
-	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/dchest/uniuri"
 )
 
@@ -30,52 +29,36 @@ type Helper struct {
 	rolearn string
 }
 
-func (u *Helper) session() *session.Session {
-	sess, _ := session.NewSession(&aws.Config{
-		Region:      aws.String(u.region),
-		Credentials: credentials.NewStaticCredentials(u.key, u.secret, ""),
-	})
-
-	return sess
+func (u *Helper) config(ctx context.Context) (aws.Config, error) {
+	return awsConfig(ctx, u.region, u.key, u.secret, u.rolearn)
 }
 
-func (u *Helper) sqsSvc() *sqs.SQS {
-	sess := u.session()
-	var svc *sqs.SQS
-	if u.rolearn != "" {
-		cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, u.rolearn)}
-		svc = sqs.New(sess, cnf)
-		return svc
+func (u *Helper) sqsSvc(ctx context.Context) (*sqs.Client, error) {
+	cfg, err := u.config(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("config failed: %w", err)
 	}
 
-	svc = sqs.New(sess)
-	return svc
+	return sqs.NewFromConfig(cfg), nil
 }
 
-func (u *Helper) snsSvc() *sns.SNS {
-	sess := u.session()
-	var svc *sns.SNS
-	if u.rolearn != "" {
-		cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, u.rolearn)}
-		svc = sns.New(sess, cnf)
-		return svc
+func (u *Helper) snsSvc(ctx context.Context) (*sns.Client, error) {
+	cfg, err := u.config(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("config failed: %w", err)
 	}
 
-	svc = sns.New(sess)
-	return svc
+	return sns.NewFromConfig(cfg), nil
 }
 
-func (u *Helper) GetAcctId() (*string, error) {
-	sess := u.session()
-	var svc *sts.STS
-	if u.rolearn != "" {
-		cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, u.rolearn)}
-		svc = sts.New(sess, cnf)
-	} else {
-		svc = sts.New(sess)
+func (u *Helper) GetAcctId(ctx context.Context) (*string, error) {
+	cfg, err := u.config(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("config failed: %w", err)
 	}
 
-	res, err := svc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
+	svc := sts.NewFromConfig(cfg)
+	res, err := svc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, fmt.Errorf("GetCallerIdentity failed: %w", err)
 	}
@@ -85,8 +68,8 @@ func (u *Helper) GetAcctId() (*string, error) {
 
 // GetSqsAllowAllPolicy returns a policy that can be used when creating an SQS queue that allow
 // all SQS actions for everybody.
-func (u *Helper) GetSqsAllowAllPolicy(queue string) string {
-	acct, err := u.GetAcctId()
+func (u *Helper) GetSqsAllowAllPolicy(ctx context.Context, queue string) string {
+	acct, err := u.GetAcctId(ctx)
 	if err != nil {
 		return ""
 	}
@@ -111,21 +94,25 @@ func (u *Helper) GetSqsAllowAllPolicy(queue string) string {
 }
 
 // GetSqs creates an SQS queue and returning the queue url and attributes.
-func (u *Helper) GetSqs(name string) (*string, map[string]*string, error) {
-	svc := u.sqsSvc()
-	policy := u.GetSqsAllowAllPolicy(name)
-	create, err := svc.CreateQueue(&sqs.CreateQueueInput{
+func (u *Helper) GetSqs(ctx context.Context, name string) (*string, map[string]string, error) {
+	svc, err := u.sqsSvc(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	policy := u.GetSqsAllowAllPolicy(ctx, name)
+	create, err := svc.CreateQueue(ctx, &sqs.CreateQueueInput{
 		QueueName:  aws.String(name),
-		Attributes: map[string]*string{"Policy": aws.String(policy)},
+		Attributes: map[string]string{"Policy": policy},
 	})
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("CreateQueue failed: %w", err)
 	}
 
-	qAttr, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
+	qAttr, err := svc.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
 		QueueUrl:       create.QueueUrl,
-		AttributeNames: []*string{aws.String("All")},
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
 	})
 
 	if err != nil {
@@ -136,19 +123,23 @@ func (u *Helper) GetSqs(name string) (*string, map[string]*string, error) {
 }
 
 // GetSqsFifo creates an SQS FIFO queue and returning the queue url and attributes.
-func (u *Helper) GetSqsFifo(name string) (*string, map[string]*string, error) {
+func (u *Helper) GetSqsFifo(ctx context.Context, name string) (*string, map[string]string, error) {
 	if !strings.HasSuffix(name, ".fifo") {
 		name += ".fifo"
 	}
 
-	svc := u.sqsSvc()
-	policy := u.GetSqsAllowAllPolicy(name)
-	create, err := svc.CreateQueue(&sqs.CreateQueueInput{
+	svc, err := u.sqsSvc(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	policy := u.GetSqsAllowAllPolicy(ctx, name)
+	create, err := svc.CreateQueue(ctx, &sqs.CreateQueueInput{
 		QueueName: aws.String(name),
-		Attributes: map[string]*string{
-			"Policy":                        aws.String(policy),
-			"FifoQueue":                     aws.String("true"),
-			"ContentBasedDeduplication":     aws.String("true"),
+		Attributes: map[string]string{
+			"Policy":                    policy,
+			"FifoQueue":                 "true",
+			"ContentBasedDeduplication": "true",
 		},
 	})
 
@@ -156,9 +147,9 @@ func (u *Helper) GetSqsFifo(name string) (*string, map[string]*string, error) {
 		return nil, nil, fmt.Errorf("CreateQueue failed: %w", err)
 	}
 
-	qAttr, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
+	qAttr, err := svc.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
 		QueueUrl:       create.QueueUrl,
-		AttributeNames: []*string{aws.String("All")},
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
 	})
 
 	if err != nil {
@@ -170,9 +161,13 @@ func (u *Helper) GetSqsFifo(name string) (*string, map[string]*string, error) {
 
 // GetTopic returns the ARN of a newly created topic or an existing one. CreateTopic API
 // returns the ARN of an existing topic.
-func (u *Helper) GetTopic(name string) (*string, error) {
-	svc := u.snsSvc()
-	res, err := svc.CreateTopic(&sns.CreateTopicInput{Name: aws.String(name)})
+func (u *Helper) GetTopic(ctx context.Context, name string) (*string, error) {
+	svc, err := u.snsSvc(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := svc.CreateTopic(ctx, &sns.CreateTopicInput{Name: aws.String(name)})
 	if err != nil {
 		return nil, fmt.Errorf("CreateTopic failed: %w", err)
 	}
@@ -183,33 +178,37 @@ func (u *Helper) GetTopic(name string) (*string, error) {
 type SubscribeToTopicInput struct {
 	QueueName  string
 	TopicArn   string
-	Attributes map[string]*string
+	Attributes map[string]string
 }
 
 // SubscribeToTopic creates the queue, or use an existing queue, and subscribe to the
 // provided SNS topic.
-func (u *Helper) SubscribeToTopic(in *SubscribeToTopicInput) (*sns.SubscribeOutput, error) {
+func (u *Helper) SubscribeToTopic(ctx context.Context, in *SubscribeToTopicInput) (*sns.SubscribeOutput, error) {
 	if in == nil {
 		return nil, fmt.Errorf("input cannot be nil")
 	}
 
-	_, qattr, err := u.GetSqs(in.QueueName)
+	_, qattr, err := u.GetSqs(ctx, in.QueueName)
 	if err != nil {
 		return nil, fmt.Errorf("GetSqs failed: %w", err)
 	}
 
-	svc := u.snsSvc()
-	return svc.Subscribe(&sns.SubscribeInput{
+	svc, err := u.snsSvc(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return svc.Subscribe(ctx, &sns.SubscribeInput{
 		TopicArn:   aws.String(in.TopicArn),
 		Protocol:   aws.String("sqs"),
-		Endpoint:   qattr["QueueArn"],
+		Endpoint:   aws.String(qattr["QueueArn"]),
 		Attributes: in.Attributes,
 	})
 }
 
 // SetupSnsSqsSubscription creates a subscription of sub to topic. It returns topic's ARN along with error.
-func (u *Helper) SetupSnsSqsSubscription(topic, sub string) (*string, error) {
-	topicArn, err := u.GetTopic(topic)
+func (u *Helper) SetupSnsSqsSubscription(ctx context.Context, topic, sub string) (*string, error) {
+	topicArn, err := u.GetTopic(ctx, topic)
 	if err != nil {
 		return nil, err
 	}
@@ -217,10 +216,10 @@ func (u *Helper) SetupSnsSqsSubscription(topic, sub string) (*string, error) {
 	in := &SubscribeToTopicInput{
 		QueueName:  sub,
 		TopicArn:   *topicArn,
-		Attributes: map[string]*string{"RawMessageDelivery": aws.String("true")},
+		Attributes: map[string]string{"RawMessageDelivery": "true"},
 	}
 
-	_, err = u.SubscribeToTopic(in)
+	_, err = u.SubscribeToTopic(ctx, in)
 	if err != nil {
 		return nil, err
 	}

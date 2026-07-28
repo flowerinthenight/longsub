@@ -2,6 +2,7 @@ package awssqs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,14 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/aws/smithy-go"
 	"github.com/dchest/uniuri"
-	"github.com/flowerinthenight/longsub/v2"
+	"github.com/flowerinthenight/longsub/v3"
 )
 
 type SqsMessageCallback func(ctx any, data []byte) error
@@ -118,25 +117,19 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 		return fmt.Errorf("timeout should be >= 3s")
 	}
 
-	sess, _ := session.NewSession(&aws.Config{
-		Region:      aws.String(l.region),
-		Credentials: credentials.NewStaticCredentials(l.key, l.secret, ""),
-	})
-
-	var svc *sqs.SQS
-	switch {
-	case l.roleArn != "":
-		cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, l.roleArn)}
-		svc = sqs.New(sess, cnf)
-	default:
-		svc = sqs.New(sess)
+	cfg, err := awsConfig(quit, l.region, l.key, l.secret, l.roleArn)
+	if err != nil {
+		l.logger.Printf("awsConfig failed: %v", err)
+		return err
 	}
+
+	svc := sqs.NewFromConfig(cfg)
 
 	var timeout int64 = l.timeout
 	queueName := l.queue
-	vistm := "VisibilityTimeout"
+	vistm := types.QueueAttributeNameVisibilityTimeout
 
-	resultUrl, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{QueueName: aws.String(queueName)})
+	resultUrl, err := svc.GetQueueUrl(quit, &sqs.GetQueueUrlInput{QueueName: aws.String(queueName)})
 	if err != nil {
 		switch {
 		case !l.fatalOnQueueError:
@@ -147,8 +140,8 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 		}
 	}
 
-	attrOut, err := svc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
-		AttributeNames: []*string{&vistm},
+	attrOut, err := svc.GetQueueAttributes(quit, &sqs.GetQueueAttributesInput{
+		AttributeNames: []types.QueueAttributeName{vistm},
 		QueueUrl:       resultUrl.QueueUrl,
 	})
 
@@ -162,7 +155,7 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 		}
 	}
 
-	vis, err := strconv.Atoi(*attrOut.Attributes[vistm])
+	vis, err := strconv.Atoi(attrOut.Attributes[string(vistm)])
 	if err != nil {
 		l.logger.Printf("strconv.Atoi failed: %v", err)
 		return err
@@ -190,15 +183,17 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 			break
 		}
 
-		result, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
-			QueueUrl:              resultUrl.QueueUrl,
-			AttributeNames:        aws.StringSlice([]string{"SentTimestamp"}),
-			MaxNumberOfMessages:   aws.Int64(1),
-			MessageAttributeNames: aws.StringSlice([]string{"All"}),
+		// Not tied to 'quit' on purpose; the long poll is allowed to run to completion and
+		// the term flag above is what breaks us out of the loop.
+		result, err := svc.ReceiveMessage(context.Background(), &sqs.ReceiveMessageInput{
+			QueueUrl:                    resultUrl.QueueUrl,
+			MessageSystemAttributeNames: []types.MessageSystemAttributeName{types.MessageSystemAttributeNameSentTimestamp},
+			MaxNumberOfMessages:         1,
+			MessageAttributeNames:       []string{"All"},
 			// If running in k8s, don't forget that default grace period for shutdown is 30s.
 			// If you set 'WaitTimeSeconds' to more than that, this service will be
 			// SIGKILL'ed everytime there is an update.
-			WaitTimeSeconds: aws.Int64(timeout),
+			WaitTimeSeconds: int32(timeout),
 		})
 
 		if err != nil {
@@ -233,15 +228,15 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 						return
 					case <-ticker.C:
 						if change {
-							_, err := svc.ChangeMessageVisibility(&sqs.ChangeMessageVisibilityInput{
+							_, err := svc.ChangeMessageVisibility(context.Background(), &sqs.ChangeMessageVisibilityInput{
 								ReceiptHandle:     aws.String(receiptHandle),
 								QueueUrl:          aws.String(queueUrl),
-								VisibilityTimeout: aws.Int64(int64(vis)),
+								VisibilityTimeout: int32(vis),
 							})
 
 							if err != nil {
-								_, ok := err.(awserr.Error)
-								if ok {
+								var apiErr smithy.APIError
+								if errors.As(err, &apiErr) {
 									// TODO: Surely, there has to be a better way.
 									// Actual error:
 									// err=InvalidParameterValue: Value 30 for parameter VisibilityTimeout is invalid.
@@ -283,7 +278,8 @@ func (l *LengthySubscriber) Start(quit context.Context, done ...chan error) erro
 		}
 
 		if ack {
-			_, err = svc.DeleteMessage(&sqs.DeleteMessageInput{
+			// Also not tied to 'quit', so an in-flight ack still lands during shutdown.
+			_, err = svc.DeleteMessage(context.Background(), &sqs.DeleteMessageInput{
 				QueueUrl:      resultUrl.QueueUrl,
 				ReceiptHandle: result.Messages[0].ReceiptHandle,
 			})
