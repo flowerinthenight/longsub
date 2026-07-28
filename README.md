@@ -29,7 +29,7 @@ ROLE_ARN
 
 If `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are empty, `longsub` falls back to the AWS SDK's default credential chain (shared config, IRSA, ECS task role, EC2 IMDS), so it also works when running under an instance profile or service account with no static keys.
 
-For GCP, `longsub` creates its Pub/Sub clients without explicit credentials, so [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/application-default-credentials) are used. Whichever principal ADC resolves to needs the relevant Pub/Sub permissions (for ex., `roles/pubsub.subscriber` on the subscription for subscribers, roles/pubsub.publisher` on the topic for publishers).
+For GCP, `longsub` creates its Pub/Sub clients without explicit credentials, so [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/application-default-credentials) are used. Whichever principal ADC resolves to needs the relevant Pub/Sub permissions (for ex., `roles/pubsub.subscriber` on the subscription for subscribers, `roles/pubsub.publisher` on the topic for publishers).
 
 ## License
 
