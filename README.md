@@ -35,26 +35,7 @@ running under an instance profile or service account with no static keys.
 
 For GCP, longsub creates its Pub/Sub clients without explicit credentials, so
 [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/application-default-credentials)
-are used. ADC looks for credentials in this order:
-
-1. The `GOOGLE_APPLICATION_CREDENTIALS` environment variable, pointing to a service account key
-   or external account (Workload Identity Federation) credential file:
-   ```bash
-   GOOGLE_APPLICATION_CREDENTIALS=/path/to/svcacct.json
-   ```
-
-2. The user credentials written by:
-   ```bash
-   gcloud auth application-default login
-   ```
-   Handy for local development. Add `--impersonate-service-account=<sa>@<project>.iam.gserviceaccount.com`
-   if you need to run as a specific service account.
-
-3. The attached service account from the runtime environment's metadata server (GCE, GKE Workload
-   Identity, Cloud Run, Cloud Functions, App Engine, etc.). This is the recommended setup for
-   deployed workloads since there is no key file to manage.
-
-Whichever principal ADC resolves to needs the relevant Pub/Sub permissions (for ex.,
+are used. Whichever principal ADC resolves to needs the relevant Pub/Sub permissions (for ex.,
 `roles/pubsub.subscriber` on the subscription for subscribers, `roles/pubsub.publisher` on the
 topic for publishers).
 
